@@ -1,6 +1,6 @@
 from typing import Optional
 
-from neural_irt.modelling.configs import CaimiraConfig
+from neural_irt.modeling.configs import CaimiraConfig
 
 from . import common
 

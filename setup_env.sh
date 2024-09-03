@@ -23,4 +23,5 @@ echo "Installing pip in the conda environment"
 conda install pip -y
 
 pip install -U pip
+pip install -r requirements.txt
 

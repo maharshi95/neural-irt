@@ -3,7 +3,7 @@ import torch
 from torch import nn
 
 from neural_irt.data.indexers import AgentIndexer
-from neural_irt.modelling.caimira import CaimiraConfig, CaimiraModel
+from neural_irt.modeling.caimira import CaimiraConfig, CaimiraModel
 
 
 class CaimiraInferenceModel(nn.Module):

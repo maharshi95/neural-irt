@@ -2,7 +2,7 @@ from typing import Any, Optional
 
 from pydantic import BaseModel
 
-from neural_irt.modelling.configs import IrtModelConfig
+from neural_irt.modeling.configs import IrtModelConfig
 
 
 class DatasetConfig(BaseModel):

@@ -10,8 +10,8 @@ from torch import Tensor, nn
 
 from neural_irt.configs.common import IrtModelConfig, TrainerConfig
 from neural_irt.data.indexers import AgentIndexer
-from neural_irt.modelling.caimira import CaimiraModel, CaimiraModelOutput
-from neural_irt.modelling.configs import CaimiraConfig, NeuralMIRTConfig
+from neural_irt.modeling.caimira import CaimiraModel, CaimiraModelOutput
+from neural_irt.modeling.configs import CaimiraConfig, NeuralMIRTConfig
 
 
 def init_model(config: IrtModelConfig) -> nn.Module:
