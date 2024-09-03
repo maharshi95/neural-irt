@@ -1,3 +1,11 @@
+# Project dirs
+lightning_logs/
+wandb/
+checkpoints/
+
+# System files
+.DS_Store
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -20,6 +28,7 @@ parts/
 sdist/
 var/
 wheels/
+pip-wheel-metadata/
 share/python-wheels/
 *.egg-info/
 .installed.cfg

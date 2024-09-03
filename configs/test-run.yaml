@@ -1,0 +1,51 @@
+run_name: "sample_run"
+extra_run_name_tag: "test"
+
+data:
+  train_set:
+    queries: "neural_irt/resources/test_data/tiny-test-queries.jsonl"
+    agents: "neural_irt/resources/test_data/tiny-test-agents.jsonl"
+    responses: "neural_irt/resources/test_data/tiny-test-responses.jsonl"
+  val_set: null
+  val_sets:
+    val:
+      queries: "neural_irt/resources/test_data/tiny-test-queries.jsonl"
+      agents: "neural_irt/resources/test_data/tiny-test-agents.jsonl"
+      responses: "neural_irt/resources/test_data/tiny-test-responses.jsonl"
+  question_input_format: "embedding"
+  agent_input_format: "id"
+  agent_indexer_path: null
+  query_indexer_path: null
+
+model:
+  n_agents: 7
+  n_agent_types: 4
+  n_dim: 10
+  n_dim_item_embed: 3
+  rel_mode: "linear"
+  dif_mode: "linear"
+  fit_guess_bias: False
+  fit_agent_type_embeddings: False
+  characteristics_bounder: null
+  rel_temperature: 0.5
+
+trainer:
+  c_reg_skill: 1e-6
+  c_reg_difficulty: 1e-6
+  c_reg_relevance: 1e-6
+  max_epochs: 10
+  max_steps: null
+  sampler: null
+  optimizer: "Adam"
+  learning_rate: 1e-3
+  cyclic_lr: False
+  second_optimizer: "SGD"
+  second_learning_rate: 5e-4
+  second_optimizer_start_epoch: 7
+  freeze_bias_after: null
+
+
+wandb: null
+  # project: "sample_project"
+  # save_dir: "path/to/save/dir"
+  # entity: null
