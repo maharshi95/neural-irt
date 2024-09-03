@@ -1,0 +1,10 @@
+pytest
+torch>=2.0
+numpy<2.0
+pytorch-lightning
+datasets
+rich
+rich-argparse
+loguru
+msgspec
+pydantic
