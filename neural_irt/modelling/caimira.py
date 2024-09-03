@@ -1,12 +1,15 @@
 # %%
 
 import dataclasses
+import os
 from typing import Any, Optional, Sequence
 
 import torch
 import torch.nn.functional as F
 from loguru import logger
 from torch import Tensor, nn
+
+from neural_irt.utils import config_utils
 
 from .configs import CaimiraConfig
 from .layers import Bounder
@@ -111,6 +114,23 @@ class CaimiraModel(nn.Module):
             skills = self.bounder(skills)
         return skills
 
+    def compute_agent_type_skills(self, agent_type_ids: Tensor):
+        """
+        Calculates the skill weights for the agent type based on the given agent types.
+
+        Args:
+            agent_type_ids (Tensor): The agent types for which to calculate the skill weights.
+
+        Returns:
+            Tensor: The skill vector for the agent type.
+        """
+
+        skills = self.agent_type_embeddings(agent_type_ids)
+
+        if self.config.characteristics_bounder:
+            skills = self.bounder(skills)
+        return skills
+
     def compute_item_difficulty(self, item_embeddings: Tensor) -> Tensor:
         """Returns the relative difficulty of the items."""
         dif_raw = self.layer_dif(item_embeddings)
@@ -176,6 +196,35 @@ class CaimiraModel(nn.Module):
             **item_chars,
             skill=agent_skills,
         )
+
+    def save_pretrained(self, path: str):
+        # Save the model config, model weights
+
+        os.makedirs(path, exist_ok=True)
+
+        # Save model config
+        config_path = os.path.join(path, "config.json")
+        config_utils.save_config(self.config, config_path)
+
+        # Save model weights
+        weights_path = os.path.join(path, "model.pt")
+        torch.save(self.state_dict(), weights_path)
+
+        logger.info(f"Model saved to {path}")
+
+    @classmethod
+    def load_pretrained(cls, path: str, device: str = "auto"):
+        device = torch.device(device)
+
+        # Load the model config, model weights
+        config_path = os.path.join(path, "config.json")
+        config = config_utils.load_config_from_filepaths(config_path, cls=CaimiraConfig)
+
+        ckpt_path = os.path.join(path, "model.pt")
+        model = cls(config=config)
+        model.load_state_dict(torch.load(ckpt_path, map_location=device))
+        logger.info(f"Model loaded from {path}")
+        return model
 
 
 if __name__ == "__main__":

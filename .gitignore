@@ -1,6 +1,7 @@
 # Project dirs
 lightning_logs/
 wandb/
+checkpoints/
 
 # System files
 .DS_Store

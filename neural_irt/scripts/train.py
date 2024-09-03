@@ -1,4 +1,5 @@
 import argparse
+import os
 from collections import Counter
 from typing import Any, Optional, Sequence
 
@@ -10,12 +11,12 @@ from rich.traceback import install
 from rich_argparse import RichHelpFormatter
 from torch.utils import data as torch_data
 
-from neural_irt import config_utils
-from neural_irt.configs import CaimiraDatasetConfig, RunConfig
+from neural_irt.configs.caimira import RunConfig
+from neural_irt.configs.common import DataConfig, DatasetConfig
 from neural_irt.data import collators, datasets
-from neural_irt.data.datasets import load_dataset_hf
 from neural_irt.data.indexers import AgentIndexer
 from neural_irt.train_model import LITModule
+from neural_irt.utils import config_utils, parser_utils
 
 install(show_locals=False, width=120, extra_lines=2, code_width=90)
 
@@ -30,22 +31,17 @@ logger.configure(
 )
 
 
-def create_agent_indexer_from_dataset(
-    dataset_or_path: str | Sequence[dict[str, Any]],
-) -> AgentIndexer:
-    dataset = dataset_or_path
-    if isinstance(dataset, str):
-        dataset = load_dataset_hf(dataset_or_path)
-
-    agent_ids = [entry["id"] for entry in dataset]
-    agent_types = list(set([entry["agent_type"] for entry in dataset]))
-    agent_type_map = {entry["id"]: entry["agent_type"] for entry in dataset}
-    return AgentIndexer(agent_ids, agent_types, agent_type_map)
+def save_checkpoint(
+    lit_model: LITModule, agent_indexer: AgentIndexer, config: RunConfig, path: str
+):
+    os.makedirs(path, exist_ok=True)
+    lit_model.model.save_pretrained(path)
+    agent_indexer.save_to_disk(path)
 
 
 def make_run_name(config: RunConfig) -> str:
-    model_config = config.model.config
-    name_str = f"{config.model.arch}-{model_config.n_dim}-dim"
+    model_config = config.model
+    name_str = f"{model_config.arch}-{model_config.n_dim}-dim"
 
     name_str += f"_diff-{args.diff_mode}"
 
@@ -98,7 +94,7 @@ def make_run_name(config: RunConfig) -> str:
 
 
 def load_dataset(
-    dataset_config: CaimiraDatasetConfig,
+    dataset_config: DatasetConfig,
     query_input_format: str,
     agent_input_format: str,
 ) -> datasets.IrtDataset:
@@ -110,51 +106,91 @@ def load_dataset(
     )
 
 
-def make_dataloaders(config: RunConfig):
-    agent_indexer = create_agent_indexer_from_dataset(config.data.train_set.agents)
+def create_agent_indexer_from_dataset(
+    dataset_or_path: str | Sequence[dict[str, Any]],
+) -> AgentIndexer:
+    dataset = dataset_or_path
+    if isinstance(dataset, str):
+        dataset = datasets.load_dataset_hf(dataset_or_path)
+
+    agent_ids = [entry["id"] for entry in dataset]
+    agent_types = list({entry["agent_type"] for entry in dataset})
+    agent_type_map = {entry["id"]: entry["agent_type"] for entry in dataset}
+    return AgentIndexer(agent_ids, agent_types, agent_type_map)
+
+
+def create_agent_indexer(config: RunConfig) -> AgentIndexer:
+    if config.data.agent_indexer_path:
+        agent_indexer = AgentIndexer.load_from_disk(config.data.agent_indexer_path)
+    else:
+        agent_indexer = create_agent_indexer_from_dataset(config.data.train_set.agents)
+
+    # If the model config is not set, set it to the agent indexer with a warning
+    if not config.model.n_agents:
+        logger.warning(
+            "n_agents not set in model config, "
+            f"setting to agent_indexer.n_agents: {agent_indexer.n_agents}"
+        )
+        config.model.n_agents = agent_indexer.n_agents
+
+    if not config.model.n_agent_types:
+        logger.warning(
+            "n_agent_types not set in model config, "
+            f"setting to agent_indexer.n_agent_types: {agent_indexer.n_agent_types}"
+        )
+        config.model.n_agent_types = agent_indexer.n_agent_types
+
+    return agent_indexer
+
+
+def make_dataloaders(
+    data_config: DataConfig, agent_indexer: AgentIndexer, train_batch_size: int
+):
     print("# Agents: ", agent_indexer.n_agents)
     print("# Agent Types: ", agent_indexer.n_agent_types)
     train_collator = collators.CaimiraCollator(agent_indexer, is_training=True)
     val_collator = collators.CaimiraCollator(agent_indexer, is_training=False)
 
     train_dataset = load_dataset(
-        config.data.train_set,
-        config.data.question_input_format,
-        config.data.agent_input_format,
+        data_config.train_set,
+        data_config.question_input_format,
+        data_config.agent_input_format,
     )
 
-    if config.trainer.sampler == "weighted":
-        # TODO: Implement this
-        raise NotImplementedError("Weighted sampler not implemented")
-        logger.info("Using Weighted Sampler.")
+    # if data_config.trainer.sampler == "weighted":
+    #     # TODO: Implement this
+    #     raise NotImplementedError("Weighted sampler not implemented")
+    #     logger.info("Using Weighted Sampler.")
 
-        # Gather indices from train_dataset that correspond to subject types
-        ds_indices = {
-            i
-            for i, e in enumerate(train_dataset)
-            if "human" in agent_indexer.get_agent_type(e["agent_id"])
-        }
-        w_humans = 3.0
-        w_ai = 1.0
-        weights = [
-            w_humans if i in ds_indices else w_ai for i in range(len(train_dataset))
-        ]
-        sampler = torch_data.WeightedRandomSampler(weights, len(weights))
+    #     # Gather indices from train_dataset that correspond to subject types
+    #     ds_indices = {
+    #         i
+    #         for i, e in enumerate(train_dataset)
+    #         if "human" in agent_indexer.get_agent_type(e["agent_id"])
+    #     }
+    #     w_humans = 3.0
+    #     w_ai = 1.0
+    #     weights = [
+    #         w_humans if i in ds_indices else w_ai for i in range(len(train_dataset))
+    #     ]
+    #     sampler = torch_data.WeightedRandomSampler(weights, len(weights))
 
     train_loader = torch_data.DataLoader(
         train_dataset,
-        batch_size=config.trainer.batch_size,
+        batch_size=train_batch_size,
         shuffle=True,
         collate_fn=train_collator,
     )
     val_loaders = {}
-    for name, val_set in config.data.val_sets.items():
+    for name, val_set in data_config.val_sets.items():
         val_ds = load_dataset(
-            val_set, config.data.question_input_format, config.data.agent_input_format
+            val_set,
+            data_config.question_input_format,
+            data_config.agent_input_format,
         )
         val_loaders[name] = torch_data.DataLoader(
             val_ds,
-            batch_size=config.trainer.batch_size,
+            batch_size=train_batch_size,
             shuffle=False,
             collate_fn=val_collator,
         )
@@ -167,11 +203,14 @@ def make_dataloaders(config: RunConfig):
 
 def main(args: argparse.Namespace) -> None:
     config: RunConfig = config_utils.load_config_from_namespace(args, RunConfig)
+    agent_indexer = create_agent_indexer(config)
 
     exp_name = config.run_name or make_run_name(config)
     logger.info("Experiment Name: " + exp_name)
 
-    train_loader, val_loaders_dict = make_dataloaders(config)
+    train_loader, val_loaders_dict = make_dataloaders(
+        config.data, agent_indexer, config.trainer.batch_size
+    )
     val_loader_names = list(val_loaders_dict.keys())
     val_loaders = [val_loaders_dict[name] for name in val_loader_names]
     model = LITModule(
@@ -208,7 +247,9 @@ def main(args: argparse.Namespace) -> None:
     trainer_ckpt_path = model_ckpt_path.replace(".ckpt", ".trainer.ckpt")
     model.save_checkpoint(model_ckpt_path)
     trainer.save_checkpoint(trainer_ckpt_path)
-    logger.info(f"Saved model to {model_ckpt_path}")
+    ckpt_dir = f"{config.trainer.ckpt_savedir}/{exp_name}/epoch_{trainer.current_epoch}"
+    save_checkpoint(model, agent_indexer, config, ckpt_dir)
+    logger.info(f"Saved model to {ckpt_dir}")
 
 
 def add_arguments(
@@ -216,7 +257,7 @@ def add_arguments(
 ) -> argparse.ArgumentParser:
     parser = parser or argparse.ArgumentParser()
 
-    return config_utils.populate_parser_with_config_args(RunConfig, parser)
+    return parser_utils.populate_parser_with_config_args(parser, RunConfig)
 
 
 if __name__ == "__main__":

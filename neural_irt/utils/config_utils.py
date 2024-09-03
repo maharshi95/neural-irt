@@ -3,8 +3,22 @@ import json
 from typing import Any, List
 
 import yaml
+from pydantic import BaseModel
 
 from neural_irt.utils.merge_utils import deep_merge_dict
+
+
+def save_config(config: dict | BaseModel, filepath: str):
+    """Save a config to a file. Supports YAML and JSON."""
+    if isinstance(config, BaseModel):
+        config = config.model_dump()
+    with open(filepath, "w") as f:
+        if filepath.endswith(".json"):
+            json.dump(config, f)
+        elif filepath.endswith(".yaml") or filepath.endswith(".yml"):
+            yaml.dump(config, f)
+        else:
+            raise ValueError(f"Unsupported file extension: {filepath}")
 
 
 def load_config_dict(filepath: str) -> dict:
@@ -38,7 +52,7 @@ def load_config_dicts(*filepaths: str) -> dict:
     return config
 
 
-def load_config_from_filepaths(paths: List[str], cls: type | None = None) -> Any:
+def load_config_from_filepaths(*paths: str, cls: type | None = None) -> Any:
     """Load a config from a list of filepaths.
 
     If cls is provided, the config is returned as an instance of cls.
@@ -58,7 +72,7 @@ def load_config_from_namespace(
     config_dict = {}
 
     if args.config_paths:
-        config_dict = load_config_from_filepaths(args.config_paths)
+        config_dict = load_config_from_filepaths(*args.config_paths)
 
     filepath_args = set()
     user_provided_args = {}

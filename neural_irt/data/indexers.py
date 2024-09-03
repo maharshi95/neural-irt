@@ -1,7 +1,22 @@
+"""
+This module provides indexing functionality for items and agents.
+
+Classes:
+    Indexer: A generic serializable class for mapping items to unique IDs
+    AgentIndexer: A class (subclass of Indexer) for assigning unique integer IDs to agent names and types.
+
+Functions:
+    add: Adds an item to the indexer and returns its ID.
+    extend: Adds multiple items to the indexer.
+"""
+
 # %%
 import json
 import os
 from typing import Any, Callable, Generic, Iterable, Optional, Sequence, TypeVar, Union
+
+import numpy as np
+import torch
 
 T = TypeVar("T")
 
@@ -123,6 +138,16 @@ class AgentIndexer:
         agent_types = agent_types or self.get_agent_type(agent_names)
         return self.get_agent_ids(agent_names), self.get_agent_type_ids(agent_types)
 
+    def __call__(
+        self, agent_names: Sequence[str], return_tensors: Optional[str] = None
+    ):
+        agent_ids, agent_types = self.map_to_ids(agent_names)
+        if return_tensors == "pt":
+            return torch.tensor(agent_ids), torch.tensor(agent_types)
+        elif return_tensors == "np":
+            return np.array(agent_ids), np.array(agent_types)
+        return agent_ids, agent_types
+
     @property
     def n_agents(self):
         return len(self.name_indexer)
@@ -152,11 +177,9 @@ class AgentIndexer:
 
     @classmethod
     def load_from_data_dict(cls, data_dict: dict):
-        return cls(
-            name_indexer=Indexer.load_from_data_dict(data_dict["names"]),
-            type_indexer=Indexer.load_from_data_dict(data_dict["types"]),
-            agent_type_map=data_dict["type_map"],
-        )
+        name_indexer = Indexer.load_from_data_dict(data_dict["names"])
+        type_indexer = Indexer.load_from_data_dict(data_dict["types"])
+        return cls(name_indexer, type_indexer, data_dict["type_map"])
 
     @classmethod
     def load_from_disk(cls, dirpath: str):

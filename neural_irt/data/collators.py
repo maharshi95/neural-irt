@@ -41,12 +41,12 @@ class CaimiraCollator:
 
     def __call__(self, entries: List[Dict[str, Any]]) -> Dict[str, torch.Tensor]:
         agent_names = [entry["agent_id"] for entry in entries]
-        agent_ids, agent_type_ids = self.agent_indexer.map_to_ids(agent_names)
+        agent_ids, agent_type_ids = self.agent_indexer(agent_names, return_tensors="pt")
         item_embeddings = [entry["query_rep"] for entry in entries]
 
         return {
-            "agent_ids": torch.tensor(agent_ids, dtype=torch.int),
-            "agent_type_ids": torch.tensor(agent_type_ids, dtype=torch.int),
+            "agent_ids": agent_ids,
+            "agent_type_ids": agent_type_ids,
             "item_embeddings": torch.stack(item_embeddings),
             "labels": torch.tensor(
                 [entry["ruling"] for entry in entries], dtype=torch.float32
