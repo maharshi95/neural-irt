@@ -39,12 +39,13 @@ def deep_merge_dict(
         dict: The merged dictionary.
 
     """
+    result = base.copy()
     for key, value in override.items():
-        if key not in base:
-            base[key] = value
+        if key in result:
+            result[key] = deep_merge(result[key], value, list_update_strategy)
         else:
-            base[key] = deep_merge(base[key], value, list_update_strategy)
-    return base
+            result[key] = value
+    return result
 
 
 def deep_merge_list(
@@ -64,3 +65,5 @@ def deep_merge_list(
             new_list.append(deep_merge(base_item, override_item, strategy))
         new_list.extend(base[len(override) :])
         return new_list
+    else:
+        raise ValueError(f"Unknown list update strategy: {strategy}")

@@ -41,6 +41,10 @@ class Indexer(Generic[T]):
     def __iter__(self):
         return iter(self._id_to_item)
 
+    def __contains__(self, item: T) -> bool:
+        key = self.key_fn(item) if self.key_fn else item
+        return key in self._item_to_id
+
     def __getitem__(self, index: Union[int, slice]) -> Union[T, list[T]]:
         return self._id_to_item[index]
 
@@ -73,6 +77,14 @@ class Indexer(Generic[T]):
 
     def get_items(self, ids: Iterable[int]) -> list[T]:
         return [self._id_to_item[i] for i in ids]
+
+    def __call__(self, items: Sequence[T], return_tensors: Optional[str] = None):
+        ids = self.get_ids(items)
+        if return_tensors == "pt":
+            return torch.tensor(ids)
+        elif return_tensors == "np":
+            return np.array(ids)
+        return ids
 
     @property
     def data_dict(self) -> dict:
@@ -108,6 +120,7 @@ class AgentIndexer:
         type_indexer_or_list: Indexer[str] | list[str] | None = None,
         agent_type_map: dict[str, str] | None = None,
         strict: bool = False,
+        use_unk_type: bool = False,
     ):
         self.name_indexer: Indexer[str] = (
             name_indexer_or_list
@@ -120,6 +133,9 @@ class AgentIndexer:
             if isinstance(type_indexer_or_list, Indexer)
             else Indexer(type_indexer_or_list, strict=strict)
         )
+
+        if use_unk_type and "<unk>" not in self.type_indexer:
+            self.type_indexer.add("<unk>")
 
         self.agent_type_map: dict[str, str] = agent_type_map or {}
 

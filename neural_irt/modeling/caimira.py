@@ -31,6 +31,13 @@ def create_zero_init_embedding(
     return embedding
 
 
+def resolve_device(device: str):
+    if device == "auto":
+        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    else:
+        return torch.device(device)
+
+
 class CaimiraModel(nn.Module):
     def __init__(self, config: CaimiraConfig):
         super().__init__()
@@ -214,7 +221,7 @@ class CaimiraModel(nn.Module):
 
     @classmethod
     def load_pretrained(cls, path: str, device: str = "auto"):
-        device = torch.device(device)
+        device = resolve_device(device)
 
         # Load the model config, model weights
         config_path = os.path.join(path, "config.json")
