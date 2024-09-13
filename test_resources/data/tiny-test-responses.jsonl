@@ -26,3 +26,7 @@
 {"query_id": "q10", "agent_id": "a2", "ruling": 1}
 {"query_id": "q10", "agent_id": "a4", "ruling": 0}
 {"query_id": "q10", "agent_id": "a7", "ruling": 1}
+{"query_id": "q1", "agent_id": "a1", "ruling": 1}
+{"query_id": "q1", "agent_id": "a2", "ruling": 0}
+{"query_id": "q1", "agent_id": "a6", "ruling": 1}
+{"query_id": "q1", "agent_id": "a7", "ruling": 1}

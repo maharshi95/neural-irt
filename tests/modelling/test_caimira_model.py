@@ -106,12 +106,16 @@ class TestCaimiraModel(unittest.TestCase):
 
         # Test with invalid input shapes
         with self.assertRaises(RuntimeError):
-            self.model(torch.randint(0, 10, (self.bs,)), torch.randn(self.bs - 1, 32))
+            agent_ids = torch.randint(0, 10, (self.bs,))
+            item_embeddings = torch.randn(self.bs - 1, 32)
+            self.model(agent_ids, item_embeddings)
 
         # Test without agent_type_ids when fit_agent_type_embeddings is True
         self.model.config.fit_agent_type_embeddings = True
         with self.assertRaises(ValueError):
-            self.model(torch.randint(0, 10, (self.bs,)), torch.randn(self.bs, 32))
+            agent_ids = torch.randint(0, 10, (self.bs,))
+            item_embeddings = torch.randn(self.bs, 32)
+            self.model(agent_ids, item_embeddings)
 
     def test_compute_logits(self):
         agent_skills = torch.randn(self.bs, 7)

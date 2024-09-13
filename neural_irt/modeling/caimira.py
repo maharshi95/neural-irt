@@ -1,51 +1,31 @@
 # %%
 
 import dataclasses
-import os
-from typing import Any, Optional, Sequence
+from typing import Optional, Sequence
 
 import torch
 import torch.nn.functional as F
 from loguru import logger
 from torch import Tensor, nn
 
-from neural_irt.utils import config_utils
+from neural_irt.modeling.base_model import IrtModelOutput, NeuralIrtModel
+from neural_irt.modeling.layers import create_zero_init_embedding
 
 from .configs import CaimiraConfig
 from .layers import Bounder
 
 
 @dataclasses.dataclass
-class CaimiraModelOutput:
-    logits: Tensor
-    difficulty: Tensor
+class CaimiraModelOutput(IrtModelOutput):
+    # logits, difficulty, skill are inherited from IrtModelOutput
     relevance: Tensor
-    skill: Tensor
 
 
-def create_zero_init_embedding(
-    n: int, dim: int, dtype: Any = torch.float32, requires_grad: bool = True
-):
-    embedding = nn.Embedding(n, dim, _weight=torch.zeros((n, dim), dtype=dtype))
-    embedding.weight.requires_grad = requires_grad
-    return embedding
+class CaimiraModel(NeuralIrtModel):
+    config_class = CaimiraConfig
 
-
-def resolve_device(device: str):
-    if device == "auto":
-        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    else:
-        return torch.device(device)
-
-
-class CaimiraModel(nn.Module):
     def __init__(self, config: CaimiraConfig):
-        super().__init__()
-
-        self.config = config
-
-        logger.info(f"Model Config: {config}")
-        self._build_model()
+        super().__init__(config)
 
     def _build_model(self):
         self.agent_embeddings = nn.Embedding(self.config.n_agents, self.config.n_dim)
@@ -97,17 +77,14 @@ class CaimiraModel(nn.Module):
     def compute_agent_skills(
         self, agent_ids: Tensor, agent_type_ids: Optional[Tensor] = None
     ):
-        """
-        Calculates the skill weights for the agent based on the given subjects and subject types.
+        """Computes agent skill weights.
 
         Args:
-            agent_ids (Tensor): The agent_ids for which to calculate the skill weights.
-            agent_type_ids (Optional[Tensor]): The agent types for which to calculate the skill weights.
-
+            agent_ids (Tensor): Agent IDs of shape (batch_size,)
+            agent_type_ids (Optional[Tensor]): Agent type IDs of shape (batch_size,)
         Returns:
-            Tensor: The skill vector for the agent.
+            Tensor: Agent skill vector of shape (batch_size, n_dim)
         """
-
         skills = self.agent_embeddings(agent_ids)
 
         if self.config.fit_agent_type_embeddings:
@@ -116,20 +93,24 @@ class CaimiraModel(nn.Module):
                     "Agent type ids must be provided if config.fit_agent_type_embeddings is True"
                 )
             skills += self.agent_type_embeddings(agent_type_ids)
+        elif agent_type_ids is not None:
+            # Warn if agent_type_ids are provided but not used
+            logger.warning(
+                "Agent type ids provided but fit_agent_type_embeddings is False. Ignoring agent_type_ids."
+            )
 
         if self.config.characteristics_bounder:
             skills = self.bounder(skills)
         return skills
 
     def compute_agent_type_skills(self, agent_type_ids: Tensor):
-        """
-        Calculates the skill weights for the agent type based on the given agent types.
+        """Computes agent type skill weights.
 
         Args:
-            agent_type_ids (Tensor): The agent types for which to calculate the skill weights.
+            agent_type_ids (Tensor): Agent type IDs of shape (batch_size,)
 
         Returns:
-            Tensor: The skill vector for the agent type.
+            Tensor: Agent type skill vector of shape (batch_size, n_dim)
         """
 
         skills = self.agent_type_embeddings(agent_type_ids)
@@ -139,7 +120,14 @@ class CaimiraModel(nn.Module):
         return skills
 
     def compute_item_difficulty(self, item_embeddings: Tensor) -> Tensor:
-        """Returns the relative difficulty of the items."""
+        """Computes the relative difficulty of the items.
+
+        Args:
+            item_embeddings (Tensor): Item embeddings of shape (batch_size, n_dim_item_embed)
+
+        Returns:
+            Tensor: Item difficulty vector of shape (batch_size, n_dim)
+        """
         dif_raw = self.layer_dif(item_embeddings)
         dif_norm = dif_raw - dif_raw.mean(dim=0)
 
@@ -203,35 +191,6 @@ class CaimiraModel(nn.Module):
             **item_chars,
             skill=agent_skills,
         )
-
-    def save_pretrained(self, path: str):
-        # Save the model config, model weights
-
-        os.makedirs(path, exist_ok=True)
-
-        # Save model config
-        config_path = os.path.join(path, "config.json")
-        config_utils.save_config(self.config, config_path)
-
-        # Save model weights
-        weights_path = os.path.join(path, "model.pt")
-        torch.save(self.state_dict(), weights_path)
-
-        logger.info(f"Model saved to {path}")
-
-    @classmethod
-    def load_pretrained(cls, path: str, device: str = "auto"):
-        device = resolve_device(device)
-
-        # Load the model config, model weights
-        config_path = os.path.join(path, "config.json")
-        config = config_utils.load_config(config_path, cls=CaimiraConfig)
-
-        ckpt_path = os.path.join(path, "model.pt")
-        model = cls(config=config)
-        model.load_state_dict(torch.load(ckpt_path, map_location=device))
-        logger.info(f"Model loaded from {path}")
-        return model
 
 
 if __name__ == "__main__":
