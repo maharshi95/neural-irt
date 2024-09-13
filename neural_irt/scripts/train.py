@@ -12,7 +12,7 @@ from rich_argparse import RichHelpFormatter
 from torch.utils import data as torch_data
 
 from neural_irt.configs.caimira import RunConfig
-from neural_irt.configs.common import DataConfig, DatasetConfig
+from neural_irt.configs.common import DataConfig
 from neural_irt.data import collators, datasets
 from neural_irt.data.indexers import AgentIndexer
 from neural_irt.train_model import LITModule
@@ -93,25 +93,12 @@ def make_run_name(config: RunConfig) -> str:
     return name_str
 
 
-def load_dataset(
-    dataset_config: DatasetConfig,
-    query_input_format: str,
-    agent_input_format: str,
-) -> datasets.IrtDataset:
-    queries = datasets.load_dataset_hf(dataset_config.queries).with_format("torch")
-    agents = datasets.load_dataset_hf(dataset_config.agents).with_format("torch")
-    responses = datasets.load_dataset_hf(dataset_config.responses)
-    return datasets.IrtDataset(
-        responses, queries, agents, query_input_format, agent_input_format
-    )
-
-
 def create_agent_indexer_from_dataset(
     dataset_or_path: str | Sequence[dict[str, Any]],
 ) -> AgentIndexer:
     dataset = dataset_or_path
     if isinstance(dataset, str):
-        dataset = datasets.load_dataset_hf(dataset_or_path)
+        dataset = datasets.load_as_hf_dataset(dataset_or_path)
 
     agent_ids = [entry["id"] for entry in dataset]
     agent_types = list({entry["agent_type"] for entry in dataset})
@@ -151,7 +138,7 @@ def make_dataloaders(
     train_collator = collators.CaimiraCollator(agent_indexer, is_training=True)
     val_collator = collators.CaimiraCollator(agent_indexer, is_training=False)
 
-    train_dataset = load_dataset(
+    train_dataset = datasets.load_irt_dataset(
         data_config.train_set,
         data_config.question_input_format,
         data_config.agent_input_format,
@@ -183,7 +170,7 @@ def make_dataloaders(
     )
     val_loaders = {}
     for name, val_set in data_config.val_sets.items():
-        val_ds = load_dataset(
+        val_ds = datasets.load_irt_dataset(
             val_set,
             data_config.question_input_format,
             data_config.agent_input_format,

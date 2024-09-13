@@ -48,7 +48,6 @@ class NeuralMIRTConfig(IrtModelConfig):
     n_dim: int
 
     # Boolean flags for trainable parameters
-    fit_guess_bias: bool = False
     fit_agent_type_embeddings: bool = False
 
     characteristics_bounder: Optional[BoundingConfig] = None
@@ -82,7 +81,6 @@ class CaimiraConfig(IrtModelConfig):
     n_hidden_rel: int = 128
 
     # Boolean flags for trainable parameters
-    fit_guess_bias: bool = False
     fit_agent_type_embeddings: bool = False
 
     characteristics_bounder: Optional[BoundingConfig] = None

@@ -59,11 +59,9 @@ class WandbConfig(BaseModel):
 
 class RunConfig(BaseModel):
     run_name: Optional[str] = None
-    extra_run_name_tag: Optional[str] = None
+    # Run tag is a short string that is appended to the run name
+    run_tag: Optional[str] = None
     model: IrtModelConfig
     trainer: TrainerConfig
     data: DataConfig
     wandb: Optional[WandbConfig] = None
-
-
-# Rest of the code remains the same

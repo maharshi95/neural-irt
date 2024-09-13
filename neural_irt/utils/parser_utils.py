@@ -1,4 +1,3 @@
-# %%
 import argparse
 from inspect import isclass
 from types import NoneType, UnionType
@@ -33,7 +32,6 @@ def is_pydantic_model_type(field_type: type) -> bool:
     return isinstance(field_type, type) and issubclass(field_type, BaseModel)
 
 
-# %%
 def add_filepath_argument_for_pydantic_model(
     parser: argparse.ArgumentParser, prefix: str, cls: type
 ):

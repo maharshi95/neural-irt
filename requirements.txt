@@ -1,4 +1,5 @@
 pytest
+pytest-mock
 torch>=2.0
 numpy<2.0
 pytorch-lightning
