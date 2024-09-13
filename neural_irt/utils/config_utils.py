@@ -1,6 +1,6 @@
 import argparse
 import json
-from typing import Any, List
+from typing import Any
 
 import yaml
 from pydantic import BaseModel
@@ -21,7 +21,7 @@ def save_config(config: dict | BaseModel, filepath: str):
             raise ValueError(f"Unsupported file extension: {filepath}")
 
 
-def load_config_dict(filepath: str) -> dict:
+def _load_config_from_single_file(filepath: str) -> dict:
     """Load a config dictionary from a file. Supports YAML and JSON."""
     with open(filepath, "r") as f:
         if filepath.endswith(".json"):
@@ -32,38 +32,24 @@ def load_config_dict(filepath: str) -> dict:
             raise ValueError(f"Unsupported file extension: {filepath}")
 
 
-def load_config_dicts(*filepaths: str) -> dict:
-    """
-    Parse a list of config files and return a dictionary.
-
-    Args:
-        *filepaths (str): The list of filepaths to parse.
-
-    Returns:
-        dict: The parsed dictionary.
-
-    """
-    if not filepaths:
-        raise ValueError("At least one path is required")
-    config = {}
-    for filepath in filepaths:
-        new_config = load_config_dict(filepath)
-        config = deep_merge_dict(config, new_config)
-    return config
-
-
-def load_config_from_filepaths(*paths: str, cls: type | None = None) -> Any:
+def load_config(*paths: str, cls: type | None = None) -> Any:
     """Load a config from a list of filepaths.
+
+    Configs from multiple files are merged sequentially,
+    with later files overriding earlier ones for duplicate keys.
 
     If cls is provided, the config is returned as an instance of cls.
     Otherwise, the config is returned as a dictionary.
     """
 
-    config_dict = load_config_dicts(*paths)
+    if not paths:
+        raise ValueError("At least one path is required")
+    config = {}
+    for filepath in paths:
+        new_config = _load_config_from_single_file(filepath)
+        config = deep_merge_dict(config, new_config)
 
-    if cls:
-        return cls(**config_dict)
-    return config_dict
+    return cls(**config) if cls else config
 
 
 def load_config_from_namespace(
@@ -72,7 +58,7 @@ def load_config_from_namespace(
     config_dict = {}
 
     if args.config_paths:
-        config_dict = load_config_from_filepaths(*args.config_paths)
+        config_dict = load_config(*args.config_paths)
 
     filepath_args = set()
     user_provided_args = {}
@@ -88,7 +74,7 @@ def load_config_from_namespace(
     for arg, value in sorted(user_provided_args.items()):
         *prefix_keys, current_key = arg.split(".")
         if arg in filepath_args:
-            value = load_config_dicts(value)
+            value = load_config(value)
 
         current = config_dict
         for key in prefix_keys:

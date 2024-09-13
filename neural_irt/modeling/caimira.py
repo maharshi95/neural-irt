@@ -225,7 +225,7 @@ class CaimiraModel(nn.Module):
 
         # Load the model config, model weights
         config_path = os.path.join(path, "config.json")
-        config = config_utils.load_config_from_filepaths(config_path, cls=CaimiraConfig)
+        config = config_utils.load_config(config_path, cls=CaimiraConfig)
 
         ckpt_path = os.path.join(path, "model.pt")
         model = cls(config=config)
