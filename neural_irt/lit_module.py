@@ -6,20 +6,20 @@ import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
 from loguru import logger
-from torch import Tensor, nn
+from torch import Tensor
 
 from neural_irt.configs.common import IrtModelConfig, TrainerConfig
 from neural_irt.data.indexers import AgentIndexer
-from neural_irt.modeling.base_model import NeuralIrtModel
+from neural_irt.modeling.base_models import BaseIrtModel, IrtModelOutput
 from neural_irt.modeling.caimira import CaimiraModel, CaimiraModelOutput
-from neural_irt.modeling.configs import CaimiraConfig, NeuralMIRTConfig
+from neural_irt.modeling.configs import CaimiraConfig, MirtConfig
 from neural_irt.utils import config_utils
 
 
-def init_model(config: IrtModelConfig) -> NeuralIrtModel:
+def create_model(config: IrtModelConfig) -> BaseIrtModel:
     if isinstance(config, CaimiraConfig):
         return CaimiraModel(config)
-    elif isinstance(config, NeuralMIRTConfig):
+    elif isinstance(config, MirtConfig):
         raise NotImplementedError("MIRT model not implemented yet.")
     else:
         raise ValueError(f"Unknown model config: {config}")
@@ -29,15 +29,15 @@ class LITModule(pl.LightningModule):
     def __init__(
         self,
         trainer_config: TrainerConfig,
-        model_or_config: IrtModelConfig | NeuralIrtModel,
+        model_or_config: IrtModelConfig | BaseIrtModel,
         val_dataloader_names: list[str] | None = None,
         agent_indexer: AgentIndexer | None = None,
     ):
         super().__init__()
 
         if isinstance(model_or_config, IrtModelConfig):
-            self.model = init_model(model_or_config)
-        elif isinstance(model_or_config, NeuralIrtModel):
+            self.model = create_model(model_or_config)
+        elif isinstance(model_or_config, BaseIrtModel):
             self.model = model_or_config
         else:
             raise ValueError(
@@ -50,7 +50,7 @@ class LITModule(pl.LightningModule):
 
         self.save_hyperparameters(argparse.Namespace(**trainer_config.model_dump()))
 
-    def forward(self, *args, **kwargs) -> CaimiraModelOutput:
+    def forward(self, *args, **kwargs) -> IrtModelOutput:
         return self.model.forward(*args, **kwargs)
 
     def compute_loss(
@@ -212,8 +212,7 @@ class LITModule(pl.LightningModule):
     def predict_step(self, batch, batch_idx):
         # batch: (subjects, items)
         # return: dict
-        subjects, items = batch
-        logits = self.forward(subjects, items)
+        logits = self.forward(**batch)
         return logits
 
     def save_checkpoint(self, dirpath, weights_only=False):

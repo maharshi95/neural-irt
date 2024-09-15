@@ -16,7 +16,7 @@ from neural_irt.configs.caimira import RunConfig
 from neural_irt.configs.common import DataConfig
 from neural_irt.data import collators, datasets
 from neural_irt.data.indexers import AgentIndexer
-from neural_irt.train_model import LITModule
+from neural_irt.lit_module import LITModule
 from neural_irt.utils import config_utils, parser_utils
 
 install(show_locals=False, width=120, extra_lines=2, code_width=90)

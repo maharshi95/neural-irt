@@ -1,43 +1,32 @@
-# %%
-
 import dataclasses
 from typing import Optional, Sequence
 
 import torch
 import torch.nn.functional as F
-from loguru import logger
 from torch import Tensor, nn
 
-from neural_irt.modeling.base_model import IrtModelOutput, NeuralIrtModel
-from neural_irt.modeling.layers import create_zero_init_embedding
+from neural_irt.modeling.base_models import AgentIndexedIrtModel, IrtModelOutput
 
 from .configs import CaimiraConfig
-from .layers import Bounder
 
 
 @dataclasses.dataclass
 class CaimiraModelOutput(IrtModelOutput):
-    # logits, difficulty, skill are inherited from IrtModelOutput
+    # Below fields are inherited from IrtModelOutput
+    # logits: Tensor
+    # difficulty: Tensor
+    # skill: Tensor
     relevance: Tensor
 
 
-class CaimiraModel(NeuralIrtModel):
+class CaimiraModel(AgentIndexedIrtModel):
     config_class = CaimiraConfig
+    output_class = CaimiraModelOutput
 
     def __init__(self, config: CaimiraConfig):
         super().__init__(config)
 
-    def _build_model(self):
-        self.agent_embeddings = nn.Embedding(self.config.n_agents, self.config.n_dim)
-        self.agent_embeddings.weight.data.normal_(0, 0.001)
-
-        self.agent_type_embeddings = create_zero_init_embedding(
-            n=self.config.n_agent_types,
-            dim=self.config.n_dim,
-            dtype=torch.float32,
-            requires_grad=self.config.fit_agent_type_embeddings,
-        )
-
+    def _build_item_layers(self):
         # Setup Item difficulty
         if self.config.dif_mode == "linear":
             self.layer_dif = nn.Linear(self.config.n_dim_item_embed, self.config.n_dim)
@@ -65,59 +54,6 @@ class CaimiraModel(NeuralIrtModel):
             )
         else:
             raise ValueError(f"Unknown relevance mode {self.config.rel_mode}")
-
-        # Setup Guess Bias
-        self.guess_bias = nn.Parameter(
-            torch.zeros(1), requires_grad=self.config.fit_guess_bias
-        )
-
-        if self.config.characteristics_bounder:
-            self.bounder = Bounder(self.config.characteristics_bounder)
-
-    def compute_agent_skills(
-        self, agent_ids: Tensor, agent_type_ids: Optional[Tensor] = None
-    ):
-        """Computes agent skill weights.
-
-        Args:
-            agent_ids (Tensor): Agent IDs of shape (batch_size,)
-            agent_type_ids (Optional[Tensor]): Agent type IDs of shape (batch_size,)
-        Returns:
-            Tensor: Agent skill vector of shape (batch_size, n_dim)
-        """
-        skills = self.agent_embeddings(agent_ids)
-
-        if self.config.fit_agent_type_embeddings:
-            if agent_type_ids is None:
-                raise ValueError(
-                    "Agent type ids must be provided if config.fit_agent_type_embeddings is True"
-                )
-            skills += self.agent_type_embeddings(agent_type_ids)
-        elif agent_type_ids is not None:
-            # Warn if agent_type_ids are provided but not used
-            logger.warning(
-                "Agent type ids provided but fit_agent_type_embeddings is False. Ignoring agent_type_ids."
-            )
-
-        if self.config.characteristics_bounder:
-            skills = self.bounder(skills)
-        return skills
-
-    def compute_agent_type_skills(self, agent_type_ids: Tensor):
-        """Computes agent type skill weights.
-
-        Args:
-            agent_type_ids (Tensor): Agent type IDs of shape (batch_size,)
-
-        Returns:
-            Tensor: Agent type skill vector of shape (batch_size, n_dim)
-        """
-
-        skills = self.agent_type_embeddings(agent_type_ids)
-
-        if self.config.characteristics_bounder:
-            skills = self.bounder(skills)
-        return skills
 
     def compute_item_difficulty(self, item_embeddings: Tensor) -> Tensor:
         """Computes the relative difficulty of the items.
@@ -159,7 +95,6 @@ class CaimiraModel(NeuralIrtModel):
 
     def _compute_logits(self, agent_skills, item_chars):
         latent_scores = agent_skills - item_chars["difficulty"]
-        # logits = torch.sum((skills - difficulty) * relevance, dim=1, keepdim=True)
         logits = torch.einsum("bn,bn->b", latent_scores, item_chars["relevance"])
 
         if self.config.fit_guess_bias:
@@ -177,20 +112,7 @@ class CaimiraModel(NeuralIrtModel):
         # item_embeddings: (batch_size, n_dim_item_embed)
         # agent_type_ids: Optional[(batch_size,)]
 
-        if self.config.fit_agent_type_embeddings and agent_type_ids is None:
-            raise ValueError(
-                "Agent type ids must be provided if config.fit_agent_type_embeddings is True"
-            )
-
-        item_chars = self.compute_item_characteristics(item_embeddings)
-        agent_skills = self.compute_agent_skills(agent_ids, agent_type_ids)
-
-        logits = self._compute_logits(agent_skills, item_chars)
-        return CaimiraModelOutput(
-            logits=logits,
-            **item_chars,
-            skill=agent_skills,
-        )
+        return super().forward(agent_ids, item_embeddings, agent_type_ids)
 
 
 if __name__ == "__main__":
