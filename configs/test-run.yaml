@@ -3,18 +3,18 @@ run_tag: "test"
 
 data:
   train_set:
-    queries: "test_resources/data/tiny-test-queries.jsonl"
-    agents: "test_resources/data/tiny-test-agents.jsonl"
-    responses: "test_resources/data/tiny-test-responses.jsonl"
+    queries: "resources/tests/data/tiny-test-queries.jsonl"
+    agents: "resources/tests/data/tiny-test-agents.jsonl"
+    responses: "resources/tests/data/tiny-test-responses.jsonl"
   val_set: null
   val_sets:
     val:
-      responses: "test_resources/data/tiny-test-responses.jsonl"
+      responses: "resources/tests/data/tiny-test-responses.jsonl"
   question_input_format: "embedding"
   agent_input_format: "id"
   agent_indexer_path: null
   query_indexer_path: null
-  query_embeddings_path: "test_resources/data/tiny-test-query-embeds.pt"
+  query_embeddings_path: "resources/tests/data/tiny-test-query-embeds.pt"
 
 model:
   n_agents: 7

@@ -12,11 +12,12 @@ from rich.traceback import install
 from rich_argparse import RichHelpFormatter
 from torch.utils import data as torch_data
 
+import wandb
 from neural_irt.configs.caimira import RunConfig
 from neural_irt.configs.common import DataConfig
 from neural_irt.data import collators, datasets
 from neural_irt.data.indexers import AgentIndexer
-from neural_irt.lit_module import LITModule
+from neural_irt.lit_module import IrtLitModule
 from neural_irt.utils import config_utils, parser_utils
 
 install(show_locals=False, width=120, extra_lines=2, code_width=90)
@@ -190,15 +191,16 @@ def main(args: argparse.Namespace) -> None:
     config: RunConfig = config_utils.load_config_from_namespace(args, RunConfig)
     agent_indexer = create_agent_indexer(config)
 
-    exp_name = config.run_name or make_run_name(config)
-    logger.info("Experiment Name: " + exp_name)
+    run_name = config.run_name or make_run_name(config)
+    run_name += "__test"
+    logger.info("Experiment Name: " + run_name)
 
     train_loader, val_loaders_dict = make_dataloaders(
         config.data, agent_indexer, config.trainer.batch_size
     )
     val_loader_names = list(val_loaders_dict.keys())
     val_loaders = [val_loaders_dict[name] for name in val_loader_names]
-    model = LITModule(
+    model = IrtLitModule(
         config.trainer,
         config.model,
         val_dataloader_names=val_loader_names,
@@ -207,21 +209,22 @@ def main(args: argparse.Namespace) -> None:
     logger.info(f"Model loaded with the following config:\n{config.model}")
 
     train_logger = None
+    save_dir = os.path.abspath(config.wandb.save_dir)
     if config.wandb and config.wandb.enabled:
         train_logger = WandbLogger(
             project=config.wandb.project,
-            name=exp_name,
-            save_dir=config.wandb.save_dir,
+            name=run_name,
+            dir=save_dir,
             entity=config.wandb.entity,
         )
 
-    ckpt_dir = f"{config.trainer.ckpt_savedir}/{exp_name}"
+    ckpt_dir = f"{config.trainer.ckpt_savedir}/{run_name}"
 
     checkpoint_callback = ModelCheckpoint(
         save_top_k=3,
         monitor="val/acc",
         mode="min",
-        # dirpath=ckpt_dir,
+        dirpath=ckpt_dir,
         auto_insert_metric_name=False,
         filename="epoch={epoch}-loss={val/loss:.2f}",
     )
@@ -243,8 +246,12 @@ def main(args: argparse.Namespace) -> None:
     # logger.info(f"Saved model to {model_ckpt_path}")
     logger.info(f"Best model checkpoint: {checkpoint_callback.best_model_path}")
 
-    loaded_model = LITModule.load_from_checkpoint(checkpoint_callback.best_model_path)
+    loaded_model = IrtLitModule.load_from_checkpoint(
+        checkpoint_callback.best_model_path
+    )
     print(loaded_model)
+    print("Run dir:", wandb.run.dir)
+    wandb.save()
 
 
 def add_arguments(
@@ -263,34 +270,3 @@ if __name__ == "__main__":
     args = parser.parse_args()
     logger.info(args)
     main(args)
-
-
-# %%
-import wandb
-from wandb.apis.public import Run
-
-
-def get_wandb_runs_by_experiment(project_name, experiment_name):
-    api = wandb.Api()
-
-    # Fetch all runs for the specified project
-    runs = api.runs(f"{wandb.api.default_entity}/{project_name}")
-
-    # Filter runs by experiment name
-    matching_runs = [run for run in runs if run.name == experiment_name]
-
-    return matching_runs
-
-
-wandb_runs = get_wandb_runs_by_experiment(
-    "neurt-testing",
-    "caimira-10-dim_ttqe-emb-tiny-test-query-embeds_Adam-lr=1e-03c-reg-skill=1e-6-diff=1e-6-imp=1e-6",
-)
-for run in wandb_runs:
-    print(run.__class__)
-    # checkpoints_path = f"{run.dir}/{run.id}/checkpoints"
-    # for checkpoint in os.listdir(checkpoints_path):
-    #     print(checkpoint)
-    print(run.dir)
-    print(run.path)
-# %%

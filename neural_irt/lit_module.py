@@ -25,7 +25,7 @@ def create_model(config: IrtModelConfig) -> BaseIrtModel:
         raise ValueError(f"Unknown model config: {config}")
 
 
-class LITModule(pl.LightningModule):
+class IrtLitModule(pl.LightningModule):
     def __init__(
         self,
         trainer_config: TrainerConfig,
