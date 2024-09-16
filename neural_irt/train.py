@@ -20,7 +20,7 @@ from neural_irt.data.indexers import AgentIndexer
 from neural_irt.lit_module import IrtLitModule
 from neural_irt.utils import config_utils, parser_utils
 
-install(show_locals=False, width=120, extra_lines=2, code_width=90)
+install(show_locals=False, width=120, extra_lines=2)
 
 
 logger.configure(
@@ -92,8 +92,8 @@ def create_agent_indexer_from_dataset(
         dataset = datasets.load_as_hf_dataset(dataset_or_path)
 
     agent_ids = [entry["id"] for entry in dataset]
-    agent_types = list({entry["agent_type"] for entry in dataset})
-    agent_type_map = {entry["id"]: entry["agent_type"] for entry in dataset}
+    agent_types = list({entry["type"] for entry in dataset})
+    agent_type_map = {entry["id"]: entry["type"] for entry in dataset}
     return AgentIndexer(agent_ids, agent_types, agent_type_map)
 
 
@@ -133,6 +133,7 @@ def make_dataloaders(
         data_config.train_set,
         data_config.question_input_format,
         data_config.agent_input_format,
+        data_config.query_embeddings_path,
     )
 
     # if data_config.trainer.sampler == "weighted":
@@ -165,6 +166,7 @@ def make_dataloaders(
             val_set,
             data_config.question_input_format,
             data_config.agent_input_format,
+            data_config.query_embeddings_path,
         )
         val_loaders[name] = torch_data.DataLoader(
             val_ds,

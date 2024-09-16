@@ -15,7 +15,7 @@ class DatasetConfig(BaseModel):
 class DataConfig(BaseModel):
     train_set: DatasetConfig
     val_set: Optional[DatasetConfig]
-    val_sets: dict[str, DatasetConfig]
+    val_sets: dict[str, DatasetConfig] = {}
     question_input_format: str = "id"
     agent_input_format: str = "id"
     agent_indexer_path: Optional[str] = None

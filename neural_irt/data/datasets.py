@@ -11,13 +11,33 @@ StringDict = dict[str, Any]
 StateDict = dict[str, torch.Tensor]
 
 
+def process_dataset_name(name: str) -> str:
+    # split the name with :
+    # example {dataset_name}:{config_name}:{split_name}
+    # it could also be {dataset_name}:{split_name} or {dataset_name}::{split_name}
+    parts = name.split(":")
+    if len(parts) == 1:
+        return parts[0], None, None
+    elif len(parts) == 2:
+        return parts[0], None, parts[1]
+    elif len(parts) == 3:
+        if parts[1] == "":
+            return parts[0], None, parts[2]
+        return parts
+
+
 def load_as_hf_dataset(name_or_path: str) -> hf_datasets.Dataset:
     if name_or_path.endswith(".json") or name_or_path.endswith(".jsonl"):
         return hf_datasets.load_dataset("json", data_files=name_or_path)["train"]
+    name_or_path, config_name, split_name = process_dataset_name(name_or_path)
     if os.path.isdir(name_or_path):
-        return hf_datasets.load_from_disk(name_or_path)
+        return hf_datasets.load_from_disk(
+            name_or_path, split=split_name, config=config_name
+        )
     else:
-        return hf_datasets.load_dataset(name_or_path)
+        return hf_datasets.load_dataset(
+            name_or_path, split=split_name, config=config_name
+        )
 
 
 class IrtDataset(TorchDataset):
@@ -36,6 +56,24 @@ class IrtDataset(TorchDataset):
             raise ValueError(f"Unknown query input format: {query_input_format}")
         if agent_input_format not in ["id", "embedding", "text"]:
             raise ValueError(f"Unknown agent input format: {agent_input_format}")
+        print(bool(query_embeddings))
+        if query_input_format == "embedding" and not (
+            query_embeddings or "embedding" in queries[0]
+        ):
+            raise ValueError(
+                "Query embeddings must be provided when using embedding format. "
+                "Either provide the embeddings or ensure that the queries have an "
+                "'embedding' field"
+            )
+        if agent_input_format == "embedding" and not (
+            agent_embeddings or "embedding" in agents[0]
+        ):
+            raise ValueError(
+                "Agent embeddings must be provided when using embedding format. "
+                "Either provide the embeddings or ensure that the agents have an "
+                "'embedding' field"
+            )
+
         self.question_input_format = query_input_format
         self.agent_input_format = agent_input_format
 
