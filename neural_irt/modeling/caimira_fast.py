@@ -1,13 +1,23 @@
 import dataclasses
 from typing import Optional, Sequence
-
+import os
 import torch
 import torch.nn.functional as F
 from torch import Tensor, nn
 
-from neural_irt.modeling.base_models import AgentIndexedIrtModel, IrtModelOutput
-
+from neural_irt.modeling.base_models import IrtModelOutput
+from neural_irt.modeling.layers import Bounder, create_zero_init_embedding
+from neural_irt.utils import config_utils
 from .configs import CaimiraConfig
+
+
+def resolve_device(device: Optional[str]) -> torch.device:
+    if device is None:
+        return torch.device("cpu")
+    elif device == "auto":
+        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    else:
+        return torch.device(device)
 
 
 @dataclasses.dataclass
@@ -19,12 +29,55 @@ class CaimiraModelOutput(IrtModelOutput):
     relevance: Tensor
 
 
-class CaimiraModel(AgentIndexedIrtModel):
+class CaimiraModel(nn.Module):
     config_class = CaimiraConfig
     output_class = CaimiraModelOutput
 
     def __init__(self, config: CaimiraConfig):
-        super().__init__(config)
+        super().__init__()
+
+        self.config = config
+
+        self._build_model()
+
+    def _build_model(self):
+        self._build_agent_layers()
+        self._build_item_layers()
+
+        # Setup Guess Bias
+        self.guess_bias = nn.Parameter(
+            torch.zeros(1), requires_grad=self.config.fit_guess_bias
+        )
+
+        if self.config.characteristics_bounder:
+            self.bounder = Bounder(self.config.characteristics_bounder)
+
+    def _build_agent_layers(self):
+        self.agent_embeddings = nn.Embedding(self.config.n_agents, self.config.n_dim)
+        self.agent_embeddings.weight.data.normal_(0, 0.001)
+
+        self.agent_type_embeddings = create_zero_init_embedding(
+            n=self.config.n_agent_types,
+            dim=self.config.n_dim,
+            dtype=torch.float32,
+            requires_grad=self.config.fit_agent_type_embeddings,
+        )
+
+    def compute_agent_type_skills(self, agent_type_inputs: Tensor):
+        """Computes agent type skill weights.
+
+        Args:
+            agent_type_inputs (Tensor): Agent type IDs of shape (batch_size,)
+
+        Returns:
+            Tensor: Agent type skill vector of shape (batch_size, n_dim)
+        """
+
+        skills = self.agent_type_embeddings(agent_type_inputs)
+
+        if self.config.characteristics_bounder:
+            skills = self.bounder(skills)
+        return skills
 
     def _build_item_layers(self):
         # Setup Item difficulty
@@ -93,6 +146,37 @@ class CaimiraModel(AgentIndexedIrtModel):
 
         return characteristics
 
+    def compute_agent_skills(
+        self, agent_inputs: Tensor, agent_type_inputs: Optional[Tensor] = None
+    ):
+        """Computes agent skill weights.
+
+        Args:
+            agent_inputs (Tensor): Agent IDs of shape (batch_size,)
+            agent_type_inputs (Optional[Tensor]): Agent type IDs of shape (batch_size,)
+        Returns:
+            Tensor: Agent skill vector of shape (batch_size, n_dim)
+        """
+        skills = self.agent_embeddings(agent_inputs)
+
+        if self.config.fit_agent_type_embeddings:
+            if agent_type_inputs is None:
+                raise ValueError(
+                    "Agent type inputs must be provided if "
+                    "config.fit_agent_type_embeddings is True"
+                )
+            skills += self.agent_type_embeddings(agent_type_inputs)
+        # elif agent_type_inputs is not None:
+        #     # Warn if agent_type_ids are provided but not used
+        #     logger.warning(
+        #         "Agent type inputs provided but fit_agent_type_embeddings is False. "
+        #         "Ignoring agent_type_inputs."
+        #     )
+
+        if self.config.characteristics_bounder:
+            skills = self.bounder(skills)
+        return skills
+
     def _compute_logits(self, agent_skills, item_chars):
         latent_scores = agent_skills - item_chars["difficulty"]
         logits = torch.einsum("bn,bn->b", latent_scores, item_chars["relevance"])
@@ -112,7 +196,7 @@ class CaimiraModel(AgentIndexedIrtModel):
         # item_embeddings: (batch_size, n_dim_item_embed)
         # agent_type_ids: Optional[(batch_size,)]
 
-        if self.config.fit_agent_type_embeddings and agent_ids is None:
+        if self.config.fit_agent_type_embeddings and agent_type_ids is None:
             raise ValueError(
                 "Agent type inputs must be provided if config.fit_agent_type_embeddings is True"
             )
@@ -126,6 +210,38 @@ class CaimiraModel(AgentIndexedIrtModel):
             skill=agent_skills,
             **item_chars,
         )
+
+    def save_ckpt(self, path: str):
+        torch.save(self.state_dict(), path)
+
+    def load_ckpt(self, path: str, map_location: Optional[str] = None):
+        self.load_state_dict(torch.load(path, map_location=map_location))
+
+    def save_pretrained(self, path: str):
+        # Save the model config, model weights
+
+        os.makedirs(path, exist_ok=True)
+
+        # Save model config
+        config_path = os.path.join(path, "config.json")
+        config_utils.save_config(self.config, config_path)
+
+        # Save model weights
+        weights_path = os.path.join(path, "model.pt")
+        self.save_ckpt(weights_path)
+
+    @classmethod
+    def load_pretrained(cls, path: str, device: str = "auto"):
+        device = resolve_device(device)
+
+        # Load the model config, model weights
+        config_path = os.path.join(path, "config.json")
+        config = config_utils.load_config(config_path, cls=cls.config_class)
+
+        ckpt_path = os.path.join(path, "model.pt")
+        model = cls(config=config)
+        model.load_ckpt(ckpt_path, map_location=device)
+        return model
 
 
 if __name__ == "__main__":

@@ -11,7 +11,7 @@ from rich.logging import RichHandler
 from rich.traceback import install
 from rich_argparse import RichHelpFormatter
 from torch.utils import data as torch_data
-
+from rich import print as rprint
 import wandb
 from neural_irt.configs.caimira import RunConfig
 from neural_irt.configs.common import DataConfig
@@ -124,8 +124,6 @@ def create_agent_indexer(config: RunConfig) -> AgentIndexer:
 def make_dataloaders(
     data_config: DataConfig, agent_indexer: AgentIndexer, train_batch_size: int
 ):
-    print("# Agents: ", agent_indexer.n_agents)
-    print("# Agent Types: ", agent_indexer.n_agent_types)
     train_collator = collators.CaimiraCollator(agent_indexer, is_training=True)
     val_collator = collators.CaimiraCollator(agent_indexer, is_training=False)
 
@@ -159,6 +157,7 @@ def make_dataloaders(
         batch_size=train_batch_size,
         shuffle=True,
         collate_fn=train_collator,
+        num_workers=1,
     )
     val_loaders = {}
     for name, val_set in data_config.val_sets.items():
@@ -173,6 +172,7 @@ def make_dataloaders(
             batch_size=train_batch_size,
             shuffle=False,
             collate_fn=val_collator,
+            num_workers=1,
         )
     labels_ctr = Counter(e["ruling"] for e in train_dataset)
     random_chance = max(labels_ctr.values()) / len(train_dataset)
@@ -191,10 +191,10 @@ class CaimiraTrainer(Trainer):
 
 def main(args: argparse.Namespace) -> None:
     config: RunConfig = config_utils.load_config_from_namespace(args, RunConfig)
+    logger.info(f"Loaded config:\n{config}")
     agent_indexer = create_agent_indexer(config)
 
     run_name = config.run_name or make_run_name(config)
-    run_name += "__test"
     logger.info("Experiment Name: " + run_name)
 
     train_loader, val_loaders_dict = make_dataloaders(
@@ -270,5 +270,5 @@ if __name__ == "__main__":
     )
     parser = add_arguments(parser)
     args = parser.parse_args()
-    logger.info(args)
+    rprint({k: v for k, v in vars(args).items() if v is not None})
     main(args)

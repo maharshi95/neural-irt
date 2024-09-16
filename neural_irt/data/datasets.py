@@ -56,7 +56,6 @@ class IrtDataset(TorchDataset):
             raise ValueError(f"Unknown query input format: {query_input_format}")
         if agent_input_format not in ["id", "embedding", "text"]:
             raise ValueError(f"Unknown agent input format: {agent_input_format}")
-        print(bool(query_embeddings))
         if query_input_format == "embedding" and not (
             query_embeddings or "embedding" in queries[0]
         ):
@@ -145,7 +144,15 @@ class IrtDataset(TorchDataset):
 def load_embeddings(path: Optional[str]) -> Optional[StateDict]:
     if path is None:
         return None
-    return torch.load(path)
+    embeds = torch.load(path)
+    # Check if the embeds are a state dict. Check if the values are tensors, and if
+    # not, convert them to tensors
+    if not isinstance(embeds, dict):
+        raise ValueError(f"Embeddings must be a state dict. Got a {type(embeds)}")
+
+    if isinstance(next(iter(embeds.values())), torch.Tensor):
+        return embeds
+    return {k: torch.tensor(v) for k, v in embeds.items()}
 
 
 def load_irt_dataset(

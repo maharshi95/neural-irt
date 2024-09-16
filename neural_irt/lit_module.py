@@ -11,14 +11,17 @@ from torch import Tensor
 from neural_irt.configs.common import IrtModelConfig, TrainerConfig
 from neural_irt.data.indexers import AgentIndexer
 from neural_irt.modeling.base_models import BaseIrtModel, IrtModelOutput
+
 from neural_irt.modeling.caimira import CaimiraModel, CaimiraModelOutput
+
+from neural_irt.modeling.caimira_fast import CaimiraModel as CaimiraModelFast
 from neural_irt.modeling.configs import CaimiraConfig, MirtConfig
 from neural_irt.utils import config_utils
 
 
 def create_model(config: IrtModelConfig) -> BaseIrtModel:
     if isinstance(config, CaimiraConfig):
-        return CaimiraModel(config)
+        return CaimiraModelFast(config) if config.fast else CaimiraModel(config)
     elif isinstance(config, MirtConfig):
         raise NotImplementedError("MIRT model not implemented yet.")
     else:
@@ -171,7 +174,7 @@ class IrtLitModule(pl.LightningModule):
                 f"{tag}/{key}",
                 value,
                 logger=True,
-                add_dataloader_idx=False,
+                add_dataloader_idx=True,
                 prog_bar=prog_bar,
             )
 
@@ -217,7 +220,6 @@ class IrtLitModule(pl.LightningModule):
 
     def save_checkpoint(self, dirpath, weights_only=False):
         # save model
-        print("Saving checkpoint to", dirpath)
         os.makedirs(dirpath, exist_ok=True)
         self.model.save_pretrained(dirpath)
         if not weights_only:

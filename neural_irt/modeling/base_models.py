@@ -47,8 +47,6 @@ class PretrainedModel(nn.Module):
         weights_path = os.path.join(path, "model.pt")
         self.save_ckpt(weights_path)
 
-        logger.info(f"Model saved to {path}")
-
     @classmethod
     def load_pretrained(cls, path: str, device: str = "auto"):
         device = resolve_device(device)
@@ -60,7 +58,6 @@ class PretrainedModel(nn.Module):
         ckpt_path = os.path.join(path, "model.pt")
         model = cls(config=config)
         model.load_ckpt(ckpt_path, map_location=device)
-        logger.info(f"Model loaded from {path}")
         return model
 
 
@@ -187,12 +184,12 @@ class AgentIndexedIrtModel(BaseIrtModel):
                     "config.fit_agent_type_embeddings is True"
                 )
             skills += self.agent_type_embeddings(agent_type_inputs)
-        elif agent_type_inputs is not None:
-            # Warn if agent_type_ids are provided but not used
-            logger.warning(
-                "Agent type inputs provided but fit_agent_type_embeddings is False. "
-                "Ignoring agent_type_inputs."
-            )
+        # elif agent_type_inputs is not None:
+        #     # Warn if agent_type_ids are provided but not used
+        #     logger.warning(
+        #         "Agent type inputs provided but fit_agent_type_embeddings is False. "
+        #         "Ignoring agent_type_inputs."
+        #     )
 
         if self.config.characteristics_bounder:
             skills = self.bounder(skills)

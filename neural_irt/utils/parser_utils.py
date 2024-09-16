@@ -70,8 +70,6 @@ def add_arguments_for_type(
     field_default: Any = None,
     required: bool = False,
 ) -> List[str]:
-    logger.debug(f"Adding arguments for {field_type.__name__} at {arg_name}")
-
     if is_union_type(field_type):
         nested_types = get_nested_types_of_union(field_type)
         return add_arguments_for_type(
