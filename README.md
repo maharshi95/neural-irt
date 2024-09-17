@@ -1,14 +1,12 @@
 # neural-irt
 
-A PyTorch-based framework for training and evaluating Item Response Theory (IRT) models, including the Caimira model.
+A PyTorch-based framework for training and evaluating Item Response Theory (IRT) based models, including the Caimira model.
 
 ## Table of Contents
 
 - [Installation](#installation)
 - [Quick Start](#quick-start)
-- [Project Structure](#project-structure)
 - [Configuration](#configuration)
-- [Training](#training)
 - [Evaluation](#evaluation)
 - [Testing](#testing)
 - [Contributing](#contributing)
@@ -30,107 +28,92 @@ python setup.py install
 
 ## Quick Start
 
-Here's a quick example to get you started with training a Caimira model:
+To train a neural-irt model, follow these steps:
 
-```python
-import torch
-from torch.utils.data import DataLoader, TensorDataset
-from neural_irt.modelling.caimira import CaimiraConfig, CaimiraModel
-from neural_irt.configs.caimira import TrainerConfig
+1. Create a configuration file
+2. Run the training script
 
-# Define configurations
-model_config = CaimiraConfig(n_agents=10, n_agent_types=3, n_dim=7, n_dim_item_embed=32)
-trainer_config = TrainerConfig(max_epochs=10, batch_size=32)
+### 1. Create a Configuration File
 
-# Initialize model
-model = CaimiraModel(config=model_config)
-optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-criterion = torch.nn.CrossEntropyLoss()
+Create a new YAML configuration file in the `configs/` directory. For example, `configs/caimira_configs/my_caimira_config.yaml`:
 
-# Dummy data
-agent_ids = torch.randint(0, 10, (1000,))
-item_embeddings = torch.randn(1000, 32)
-agent_type_ids = torch.randint(0, 3, (1000,))
-labels = torch.randint(0, 2, (1000,))
-
-# Create DataLoader
-dataset = TensorDataset(agent_ids, item_embeddings, agent_type_ids, labels)
-dataloader = DataLoader(dataset, batch_size=trainer_config.batch_size, shuffle=True)
-
-# Training loop
-for epoch in range(trainer_config.max_epochs):
-    model.train()
-    total_loss = 0
-    for batch in dataloader:
-        agent_ids_batch, item_embeddings_batch, agent_type_ids_batch, labels_batch = batch
-        optimizer.zero_grad()
-        output = model(agent_ids_batch, item_embeddings_batch, agent_type_ids_batch)
-        loss = criterion(output.logits, labels_batch)
-        loss.backward()
-        optimizer.step()
-        total_loss += loss.item()
-    print(f"Epoch {epoch+1}/{trainer_config.max_epochs}, Loss: {total_loss/len(dataloader)}")
+```yaml
+data:
+    train_set:
+        queries: "path/to/train_queries.jsonl"
+        agents: "path/to/train_agents.jsonl"
+        responses: "path/to/train_responses.jsonl"
+    val_sets:
+        val:
+            queries: "path/to/val_queries.jsonl"
+            responses: "path/to/val_responses.jsonl"
+        test_set:
+            queries: "path/to/test_queries.jsonl"
+            responses: "path/to/test_responses.jsonl"
+    question_input_format: "embedding"
+    agent_input_format: "id"
+    query_embeddings_path: "path/to/query_embeddings.pt"
+model:
+    n_agents: 1000
+    n_agent_types: 5
+    n_dim: 32
+    n_dim_item_embed: 768
+    rel_mode: "linear"
+    dif_mode: "linear"
+    fit_guess_bias: false
+    fit_agent_type_embeddings: true
+    rel_temperature: 0.5
+trainer:
+    c_reg_skill: 1e-6
+    c_reg_difficulty: 1e-6
+    c_reg_relevance: 1e-6
+    batch_size: 256
+    max_epochs: 50
+    optimizer: "Adam"
+    learning_rate: 1e-3
+wandb:
+    project: "my-neural-irt-project"
+    save_dir: "./wandb_logs"
 ```
 
-## Project Structure
+You can also refer to an example config file [test-run.yaml](configs/test-run.yaml)
 
-The project is organized as follows:
+### 2. Run the Training Script
 
-- `neural_irt/`: Core library code.
-  - `modeling/`: Model definitions and related utilities.
-  - `configs/`: Configuration classes.
-  - `data/`: Data processing and indexing utilities.
-  - `evals/`: Evaluation scripts and utilities.
-  - `utils/`: Utility functions.
-  - `scripts/`: Scripts for various tasks.
-  - `tests/`: Unit tests for the project.
-- `setup.py`: Installation script.
-- `README.md`: Project documentation.
+Use the `neural_irt.train` module to start training. You can override configuration values using command-line arguments:
+
+```bash
+python -m neural_irt.train --config-paths configs/caimira_configs/my_caimira_config.yaml \
+--trainer.max_epochs=10 \
+--trainer.batch_size=512 \
+```
+
+This command will:
+- Load the configuration from `my_caimira_config.yaml`
+- Override the maximum number of epochs to 10
+- Set the batch size to 512
 
 ## Configuration
 
-Configuration classes are defined in the `neural_irt/configs` directory. The main configuration classes are:
+Key configuration options include:
+
+- `data`: Specifies paths to training and validation data
+- `model`: Defines the model architecture and parameters
+- `trainer`: Sets training hyperparameters
+- `wandb`: Configures Weights & Biases logging
+
+Refer to the configuration files in [`configs/`](configs/) or the config classes in [`neural_irt/configs`](neural_irt/configs) for more detailed examples.
+
+The main configuration classes are:
 
 - `CaimiraConfig`: Configuration for the Caimira model.
 - `TrainerConfig`: Configuration for the training process.
 - `RunConfig`: Configuration for a complete run, including model and trainer configurations.
 
-Example configuration:
+## Monitoring Training
 
-```python
-from neural_irt.configs.caimira import CaimiraConfig, TrainerConfig, RunConfig
+The training script uses Weights & Biases (wandb) for experiment tracking. You can monitor your training runs by logging into your wandb account and viewing the project specified in the configuration.
 
-model_config = CaimiraConfig(n_agents=10, n_agent_types=3, n_dim=7, n_dim_item_embed=32)
-trainer_config = TrainerConfig(max_epochs=100, batch_size=32)
-run_config = RunConfig(model=model_config, trainer=trainer_config)
-```
-
-## Training
-
-To train a model, you need to prepare your data and define your configurations. Here's an example of how to train a Caimira model:
-
-```python
-from neural_irt.modelling.caimira import CaimiraModel
-from neural_irt.configs.caimira import CaimiraConfig, TrainerConfig, RunConfig
-
-# Define configurations
-model_config = CaimiraConfig(n_agents=10, n_agent_types=3, n_dim=7, n_dim_item_embed=32)
-trainer_config = TrainerConfig(max_epochs=100, batch_size=32)
-run_config = RunConfig(model=model_config, trainer=trainer_config)
-
-# Initialize model
-model = CaimiraModel(config=model_config)
-
-# Training loop (simplified)
-for epoch in range(trainer_config.max_epochs):
-    for batch in train_dataloader:
-        agent_ids, item_embeddings, agent_type_ids, labels = batch
-        output = model(agent_ids, item_embeddings, agent_type_ids)
-        loss = compute_loss(output, labels)
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-```
 
 ## Evaluation
 
@@ -153,7 +136,7 @@ print("Agent skills:", skills)
 Unit tests are located in the `tests` directory. To run the tests, use:
 
 ```bash
-pytest
+bash run_tests.sh
 ```
 
 Example test case:
