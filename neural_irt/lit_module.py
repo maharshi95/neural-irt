@@ -6,48 +6,54 @@ import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
 from loguru import logger
-from torch import Tensor, nn
+from torch import Tensor
 
 from neural_irt.configs.common import IrtModelConfig, TrainerConfig
 from neural_irt.data.indexers import AgentIndexer
+from neural_irt.modeling.base_models import BaseIrtModel, IrtModelOutput
+
 from neural_irt.modeling.caimira import CaimiraModel, CaimiraModelOutput
-from neural_irt.modeling.configs import CaimiraConfig, NeuralMIRTConfig
+
+from neural_irt.modeling.caimira_fast import CaimiraModel as CaimiraModelFast
+from neural_irt.modeling.configs import CaimiraConfig, MirtConfig
+from neural_irt.utils import config_utils
 
 
-def init_model(config: IrtModelConfig) -> nn.Module:
+def create_model(config: IrtModelConfig) -> BaseIrtModel:
     if isinstance(config, CaimiraConfig):
-        return CaimiraModel(config)
-    elif isinstance(config, NeuralMIRTConfig):
+        return CaimiraModelFast(config) if config.fast else CaimiraModel(config)
+    elif isinstance(config, MirtConfig):
         raise NotImplementedError("MIRT model not implemented yet.")
     else:
         raise ValueError(f"Unknown model config: {config}")
 
 
-class LITModule(pl.LightningModule):
+class IrtLitModule(pl.LightningModule):
     def __init__(
         self,
         trainer_config: TrainerConfig,
-        model_or_config: IrtModelConfig | nn.Module,
+        model_or_config: IrtModelConfig | BaseIrtModel,
         val_dataloader_names: list[str] | None = None,
+        agent_indexer: AgentIndexer | None = None,
     ):
         super().__init__()
 
         if isinstance(model_or_config, IrtModelConfig):
-            self.model = init_model(model_or_config)
-        elif isinstance(model_or_config, nn.Module):
+            self.model = create_model(model_or_config)
+        elif isinstance(model_or_config, BaseIrtModel):
             self.model = model_or_config
         else:
             raise ValueError(
                 f"Invalid type for model_or_config: {type(model_or_config)}"
             )
-        # self.agent_indexer = agent_indexer
         self.trainer_config = trainer_config
         self.model_config = self.model.config
         self.val_dataloader_names = val_dataloader_names
+        self.agent_indexer = agent_indexer
 
         self.save_hyperparameters(argparse.Namespace(**trainer_config.model_dump()))
 
-    def forward(self, *args, **kwargs) -> CaimiraModelOutput:
+    def forward(self, *args, **kwargs) -> IrtModelOutput:
         return self.model.forward(*args, **kwargs)
 
     def compute_loss(
@@ -105,7 +111,7 @@ class LITModule(pl.LightningModule):
         for key, value in outputs.items():
             prog_bar = key == "acc"
             self.log(
-                f"train_{key}",
+                f"train/{key}",
                 value,
                 on_step=False,
                 on_epoch=True,
@@ -165,10 +171,10 @@ class LITModule(pl.LightningModule):
         for key, value in metrics.items():
             prog_bar = key == "acc"
             self.log(
-                f"val_{key}_{tag}",
+                f"{tag}/{key}",
                 value,
                 logger=True,
-                add_dataloader_idx=False,
+                add_dataloader_idx=True,
                 prog_bar=prog_bar,
             )
 
@@ -209,35 +215,34 @@ class LITModule(pl.LightningModule):
     def predict_step(self, batch, batch_idx):
         # batch: (subjects, items)
         # return: dict
-        subjects, items = batch
-        logits = self.forward(subjects, items)
+        logits = self.forward(**batch)
         return logits
 
-    def save_checkpoint(self, filepath):
+    def save_checkpoint(self, dirpath, weights_only=False):
         # save model
-        os.makedirs(os.path.dirname(filepath), exist_ok=True)
-        state_dict = self.state_dict()
-        state_dict["config.model"] = self.model_config
-        state_dict["config.trainer"] = self.trainer_config
-        # state_dict["agent_indexer"] = self.agent_indexer.state_dict()
-        torch.save(state_dict, filepath)
-
-    def load_checkpoint(self, filepath):
-        # load model
-        state_dict = torch.load(filepath)
-        state_dict.pop("config.model")
-        state_dict.pop("config.trainer")
-        # agent_indexer = state_dict.pop("agent_indexer")
-        self.load_state_dict(state_dict)
+        os.makedirs(dirpath, exist_ok=True)
+        self.model.save_pretrained(dirpath)
+        if not weights_only:
+            config_utils.save_config(
+                self.trainer_config.model_dump(),
+                os.path.join(dirpath, "trainer.json"),
+            )
+            if self.agent_indexer:
+                self.agent_indexer.save_to_disk(dirpath)
 
     @classmethod
     def load_from_checkpoint(cls, checkpoint_path, map_location=None):
         # load model
-        state_dict = torch.load(checkpoint_path, map_location=map_location)
-        config = state_dict.pop("config.model")
-        trainer_config = state_dict.pop("config.trainer")
-        agent_indexer = state_dict.pop("agent_indexer")
-        model = cls(config, trainer_config, agent_indexer)
-        model.load_state_dict(state_dict, strict=False)
-
-        return model
+        model = CaimiraModel.load_pretrained(checkpoint_path, device=map_location)
+        trainer_config = config_utils.load_config(
+            os.path.join(checkpoint_path, "trainer.json"),
+            cls=TrainerConfig,
+        )
+        agent_indexer = None
+        if AgentIndexer.exists_on_disk(checkpoint_path):
+            agent_indexer = AgentIndexer.load_from_disk(checkpoint_path)
+        return cls(
+            trainer_config=trainer_config,
+            model_or_config=model,
+            agent_indexer=agent_indexer,
+        )

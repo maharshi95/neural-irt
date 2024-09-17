@@ -5,20 +5,23 @@ from typing import Any, Optional, Sequence
 
 from loguru import logger
 from pytorch_lightning import Trainer
+from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
+from rich import print as rprint
 from rich.logging import RichHandler
 from rich.traceback import install
 from rich_argparse import RichHelpFormatter
 from torch.utils import data as torch_data
 
+import wandb
 from neural_irt.configs.caimira import RunConfig
 from neural_irt.configs.common import DataConfig
 from neural_irt.data import collators, datasets
 from neural_irt.data.indexers import AgentIndexer
-from neural_irt.train_model import LITModule
+from neural_irt.lit_module import IrtLitModule
 from neural_irt.utils import config_utils, parser_utils
 
-install(show_locals=False, width=120, extra_lines=2, code_width=90)
+install(show_locals=False, width=120, extra_lines=2)
 
 
 logger.configure(
@@ -31,66 +34,55 @@ logger.configure(
 )
 
 
-def save_checkpoint(
-    lit_model: LITModule, agent_indexer: AgentIndexer, config: RunConfig, path: str
-):
-    os.makedirs(path, exist_ok=True)
-    lit_model.model.save_pretrained(path)
-    agent_indexer.save_to_disk(path)
-
-
 def make_run_name(config: RunConfig) -> str:
     model_config = config.model
-    name_str = f"{model_config.arch}-{model_config.n_dim}-dim"
 
-    name_str += f"_diff-{args.diff_mode}"
-
-    name_str += f"_imp-{args.imp_mode}"
-    if args.sparse_imp:
-        name_str += "-sparse"
-    if args.imp_mode == "topics":
-        topic_model_name = "lda" if "lda" in args.topic_model_datapath else "bert"
-        name_str += f"_{topic_model_name}"
-    elif args.imp_mode == "kernel":
-        emb_model = (
-            args.embeddings_filepath.split("/")[-1]
-            .split("-embeddings-")[-1]
-            .split(".")[0]
-        )
+    def get_embedding_tag(filepath: str) -> str:
+        emb_filepath = filepath
+        emb_model = emb_filepath.split("/")[-1].split("-embeddings-")[-1].split(".")[0]
         words = (
-            args.embeddings_filepath.split("/")[-1]
-            .split("-embeddings-")[0]
-            .removeprefix("pb-")
+            emb_filepath.split("/")[-1].split("-embeddings-")[0].removeprefix("pb-")
         ).split("-")
         if words[-1] == "cross":
             words[-1] = "x"
         initials = "".join([w[0] for w in words])
-        name_str += f"_{initials}-emb-{emb_model}"
+        return f"_{initials}-emb-{emb_model}"
 
-    fit_param_names = []
-    if model_config.fit_guess_bias:
-        fit_param_names.append("gbias")
-    if model_config.fit_agent_type_embeddings:
-        fit_param_names.append("atype")
-    name_str += f"_fit-{'-'.join(fit_param_names)}"
-    if model_config.characteristics_bounder is not None:
-        name_str += "_" + model_config.characteristics_bounder.to_string
+    def get_params_tag():
+        param_names = []
+        if model_config.fit_guess_bias:
+            param_names.append("gbias")
+        if model_config.fit_agent_type_embeddings:
+            param_names.append("atype")
+        tag = f"_fit-{'-'.join(param_names)}" if param_names else ""
+        if model_config.characteristics_bounder is not None:
+            tag += f"_{model_config.characteristics_bounder.to_string}"
+        return tag
 
-    trainer_config = config.trainer
-    if trainer_config.freeze_bias_after is not None:
-        name_str += f"_freeze-after-{trainer_config.freeze_bias_after}"
+    def get_trainer_tag():
+        cfg = config.trainer
+        trainer_tags = []
+        if cfg.freeze_bias_after is not None:
+            trainer_tags.append(f"_freeze-after-{cfg.freeze_bias_after}")
 
-    name_str += f"_{trainer_config.optimizer}-lr={trainer_config.learning_rate:.0e}"
-    name_str += (
-        "_c-reg"
-        + f"-skill={trainer_config.c_reg_skill:.0e}".replace("e-0", "e-")
-        + f"-diff={trainer_config.c_reg_difficulty:.0e}".replace("e-0", "e-")
-        + f"-imp={trainer_config.c_reg_relevance:.0e}".replace("e-0", "e-")
-    )
+        trainer_tags.append(f"_{cfg.optimizer}-lr={cfg.learning_rate:.0e}")
+        trainer_tags.append(
+            "c-reg"
+            + f"-skill={cfg.c_reg_skill:.0e}".replace("e-0", "e-")
+            + f"-diff={cfg.c_reg_difficulty:.0e}".replace("e-0", "e-")
+            + f"-imp={cfg.c_reg_relevance:.0e}".replace("e-0", "e-")
+        )
 
-    if trainer_config.sampler is not None:
-        name_str += f"_sampler={trainer_config.sampler}"
-    return name_str
+        if cfg.sampler is not None:
+            trainer_tags.append(f"_sampler={cfg.sampler}")
+        return "".join(trainer_tags)
+
+    model_arch_tag = f"{model_config.arch}-{model_config.n_dim}-dim"
+    emb_tag = get_embedding_tag(config.data.query_embeddings_path)
+    params_tag = get_params_tag()
+    trainer_tag = get_trainer_tag()
+
+    return f"{model_arch_tag}{emb_tag}{params_tag}{trainer_tag}"
 
 
 def create_agent_indexer_from_dataset(
@@ -101,8 +93,8 @@ def create_agent_indexer_from_dataset(
         dataset = datasets.load_as_hf_dataset(dataset_or_path)
 
     agent_ids = [entry["id"] for entry in dataset]
-    agent_types = list({entry["agent_type"] for entry in dataset})
-    agent_type_map = {entry["id"]: entry["agent_type"] for entry in dataset}
+    agent_types = list({entry["type"] for entry in dataset})
+    agent_type_map = {entry["id"]: entry["type"] for entry in dataset}
     return AgentIndexer(agent_ids, agent_types, agent_type_map)
 
 
@@ -133,8 +125,6 @@ def create_agent_indexer(config: RunConfig) -> AgentIndexer:
 def make_dataloaders(
     data_config: DataConfig, agent_indexer: AgentIndexer, train_batch_size: int
 ):
-    print("# Agents: ", agent_indexer.n_agents)
-    print("# Agent Types: ", agent_indexer.n_agent_types)
     train_collator = collators.CaimiraCollator(agent_indexer, is_training=True)
     val_collator = collators.CaimiraCollator(agent_indexer, is_training=False)
 
@@ -142,6 +132,7 @@ def make_dataloaders(
         data_config.train_set,
         data_config.question_input_format,
         data_config.agent_input_format,
+        data_config.query_embeddings_path,
     )
 
     # if data_config.trainer.sampler == "weighted":
@@ -167,6 +158,7 @@ def make_dataloaders(
         batch_size=train_batch_size,
         shuffle=True,
         collate_fn=train_collator,
+        num_workers=1,
     )
     val_loaders = {}
     for name, val_set in data_config.val_sets.items():
@@ -174,12 +166,14 @@ def make_dataloaders(
             val_set,
             data_config.question_input_format,
             data_config.agent_input_format,
+            data_config.query_embeddings_path,
         )
         val_loaders[name] = torch_data.DataLoader(
             val_ds,
             batch_size=train_batch_size,
             shuffle=False,
             collate_fn=val_collator,
+            num_workers=1,
         )
     labels_ctr = Counter(e["ruling"] for e in train_dataset)
     random_chance = max(labels_ctr.values()) / len(train_dataset)
@@ -188,55 +182,79 @@ def make_dataloaders(
     return train_loader, val_loaders
 
 
+class CaimiraTrainer(Trainer):
+    def save_checkpoint(self, filepath, weights_only=False):
+        checkpoint_dir = filepath.rstrip(".ckpt")
+        logger.info(f"Saving checkpoint to {checkpoint_dir}")
+        os.makedirs(checkpoint_dir, exist_ok=True)
+        self.model.save_checkpoint(checkpoint_dir, weights_only=weights_only)
+
+
 def main(args: argparse.Namespace) -> None:
     config: RunConfig = config_utils.load_config_from_namespace(args, RunConfig)
+    logger.info(f"Loaded config:\n{config}")
     agent_indexer = create_agent_indexer(config)
 
-    exp_name = config.run_name or make_run_name(config)
-    logger.info("Experiment Name: " + exp_name)
+    run_name = config.run_name or make_run_name(config)
+    logger.info("Experiment Name: " + run_name)
 
     train_loader, val_loaders_dict = make_dataloaders(
         config.data, agent_indexer, config.trainer.batch_size
     )
     val_loader_names = list(val_loaders_dict.keys())
     val_loaders = [val_loaders_dict[name] for name in val_loader_names]
-    model = LITModule(
-        config.trainer, config.model, val_dataloader_names=val_loader_names
+    model = IrtLitModule(
+        config.trainer,
+        config.model,
+        val_dataloader_names=val_loader_names,
+        agent_indexer=agent_indexer,
     )
     logger.info(f"Model loaded with the following config:\n{config.model}")
 
     train_logger = None
+    save_dir = os.path.abspath(config.wandb.save_dir)
     if config.wandb and config.wandb.enabled:
         train_logger = WandbLogger(
             project=config.wandb.project,
-            name=exp_name,
-            save_dir=config.wandb.save_dir,
+            name=run_name,
+            dir=save_dir,
             entity=config.wandb.entity,
         )
 
-    trainer = Trainer(
+    ckpt_dir = f"{config.trainer.ckpt_savedir}/{run_name}"
+
+    checkpoint_callback = ModelCheckpoint(
+        save_top_k=3,
+        monitor="val/acc",
+        mode="max",  # Error: This should be "max" instead of "min" for accuracy
+        dirpath=ckpt_dir,
+        auto_insert_metric_name=False,
+        filename="epoch={epoch}-acc={val/acc:.2f}",
+    )
+    checkpoint_callback.FILE_EXTENSION = ""
+    trainer = CaimiraTrainer(
         max_epochs=config.trainer.max_epochs,
         accelerator="auto",
         logger=train_logger,
-        # callbacks=[
-        #     pl.callbacks.ModelCheckpoint(
-        #         save_top_k=3,
-        #         monitor="val_loss",
-        #         mode="min",
-        #         dirpath="checkpoints",
-        #         filename="{epoch}-{val_loss:.2f}",
-        #     )
-        # ],
+        callbacks=[checkpoint_callback],
     )
 
     trainer.fit(model, train_dataloaders=train_loader, val_dataloaders=val_loaders)
-    model_ckpt_path = f"{config.trainer.ckpt_savedir}/{exp_name}.ckpt"
-    trainer_ckpt_path = model_ckpt_path.replace(".ckpt", ".trainer.ckpt")
-    model.save_checkpoint(model_ckpt_path)
-    trainer.save_checkpoint(trainer_ckpt_path)
-    ckpt_dir = f"{config.trainer.ckpt_savedir}/{exp_name}/epoch_{trainer.current_epoch}"
-    save_checkpoint(model, agent_indexer, config, ckpt_dir)
-    logger.info(f"Saved model to {ckpt_dir}")
+    # model_ckpt_path = f"{config.trainer.ckpt_savedir}/{exp_name}.ckpt"
+    # trainer_ckpt_path = model_ckpt_path.replace(".ckpt", ".trainer.ckpt")
+
+    # model.save_checkpoint(model_ckpt_path)
+    # trainer.save_checkpoint(trainer_ckpt_path)
+
+    # logger.info(f"Saved model to {model_ckpt_path}")
+    logger.info(f"Best model checkpoint: {checkpoint_callback.best_model_path}")
+
+    loaded_model = IrtLitModule.load_from_checkpoint(
+        checkpoint_callback.best_model_path
+    )
+    print(loaded_model)
+    print("Run dir:", wandb.run.dir)
+    wandb.save()
 
 
 def add_arguments(
@@ -253,8 +271,5 @@ if __name__ == "__main__":
     )
     parser = add_arguments(parser)
     args = parser.parse_args()
-    logger.info(args)
+    rprint({k: v for k, v in vars(args).items() if v is not None})
     main(args)
-
-
-# %%

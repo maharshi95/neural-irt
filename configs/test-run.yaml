@@ -1,21 +1,20 @@
-run_name: "sample_run"
-extra_run_name_tag: "test"
+# run_name: "sample_run"
+run_tag: "test"
 
 data:
   train_set:
-    queries: "neural_irt/resources/test_data/tiny-test-queries.jsonl"
-    agents: "neural_irt/resources/test_data/tiny-test-agents.jsonl"
-    responses: "neural_irt/resources/test_data/tiny-test-responses.jsonl"
+    queries: "resources/tests/data/tiny-test-queries.jsonl"
+    agents: "resources/tests/data/tiny-test-agents.jsonl"
+    responses: "resources/tests/data/tiny-test-responses.jsonl"
   val_set: null
   val_sets:
     val:
-      queries: "neural_irt/resources/test_data/tiny-test-queries.jsonl"
-      agents: "neural_irt/resources/test_data/tiny-test-agents.jsonl"
-      responses: "neural_irt/resources/test_data/tiny-test-responses.jsonl"
+      responses: "resources/tests/data/tiny-test-responses.jsonl"
   question_input_format: "embedding"
   agent_input_format: "id"
   agent_indexer_path: null
   query_indexer_path: null
+  query_embeddings_path: "resources/tests/data/tiny-test-query-embeds.pt"
 
 model:
   n_agents: 7
@@ -33,6 +32,7 @@ trainer:
   c_reg_skill: 1e-6
   c_reg_difficulty: 1e-6
   c_reg_relevance: 1e-6
+  batch_size: 8
   max_epochs: 10
   max_steps: null
   sampler: null
@@ -45,7 +45,7 @@ trainer:
   freeze_bias_after: null
 
 
-wandb: null
-  # project: "sample_project"
-  # save_dir: "path/to/save/dir"
-  # entity: null
+wandb:
+  project: "neurt-testing"
+  save_dir: "."
+  entity: null

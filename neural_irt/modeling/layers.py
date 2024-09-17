@@ -1,3 +1,5 @@
+from typing import Any
+
 import torch
 from torch import Tensor, nn
 
@@ -18,3 +20,11 @@ class Bounder(nn.Module):
             return x
         else:
             raise ValueError(f"Unknown strategy: {self.config.strategy}")
+
+
+def create_zero_init_embedding(
+    n: int, dim: int, dtype: Any = torch.float32, requires_grad: bool = True
+):
+    embedding = nn.Embedding(n, dim, _weight=torch.zeros((n, dim), dtype=dtype))
+    embedding.weight.requires_grad = requires_grad
+    return embedding

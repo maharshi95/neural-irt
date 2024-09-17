@@ -192,6 +192,14 @@ class AgentIndexer:
                 json.dump(v, fp)
 
     @classmethod
+    def exists_on_disk(cls, dirpath: str) -> bool:
+        for k in ["names", "types", "type_map"]:
+            filepath = os.path.join(dirpath, f"agent_indexer.{k}.json")
+            if not os.path.exists(filepath):
+                return False
+        return True
+
+    @classmethod
     def load_from_data_dict(cls, data_dict: dict):
         name_indexer = Indexer.load_from_data_dict(data_dict["names"])
         type_indexer = Indexer.load_from_data_dict(data_dict["types"])

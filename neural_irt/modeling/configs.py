@@ -26,6 +26,17 @@ class BoundingConfig(BaseModel):
 
 class IrtModelConfig(BaseModel):
     n_dim: int
+    # Number of agents
+    # If not provided, will be inferred from the data (agent_indexer)
+    n_agents: Optional[int] = None
+
+    # Number of agent types (e.g. humans, cbqa, ret)
+    # If not provided, will be inferred from the data (agent_indexer)
+    n_agent_types: Optional[int] = None
+
+    # Boolean flags for trainable parameters
+    fit_agent_type_embeddings: bool = False
+
     fit_guess_bias: bool = False
     characteristics_bounder: Optional[BoundingConfig] = None
 
@@ -34,23 +45,9 @@ class IrtModelConfig(BaseModel):
         raise NotImplementedError("IrtModelConfig.arch must be implemented")
 
 
-class NeuralMIRTConfig(IrtModelConfig):
-    # Number of agents
-    n_agents: int
-
-    # Number of agent types (e.g. humans, cbqa, ret)
-    n_agent_types: int
-
+class MirtConfig(IrtModelConfig):
     # Number of items
     n_items: int
-
-    # Number of dimensions for the latent space
-    n_dim: int
-
-    # Boolean flags for trainable parameters
-    fit_agent_type_embeddings: bool = False
-
-    characteristics_bounder: Optional[BoundingConfig] = None
 
     @property
     def arch(self):
@@ -58,19 +55,8 @@ class NeuralMIRTConfig(IrtModelConfig):
 
 
 class CaimiraConfig(IrtModelConfig):
-    # Number of dimensions for the latent space
-    n_dim: int
-
     # Number of dimensions in item embeddings
     n_dim_item_embed: int
-
-    # Number of agents
-    # If not provided, will be inferred from the data (agent_indexer)
-    n_agents: Optional[int] = None
-
-    # Number of agent types (e.g. humans, cbqa, ret)
-    # If not provided, will be inferred from the data (agent_indexer)
-    n_agent_types: Optional[int] = None
 
     # Number of dimensions for the agent embedding
     rel_mode: str = "linear"  # [linear, mlp]
@@ -80,14 +66,10 @@ class CaimiraConfig(IrtModelConfig):
     n_hidden_dif: int = 128
     n_hidden_rel: int = 128
 
-    # Boolean flags for trainable parameters
-    fit_agent_type_embeddings: bool = False
-
-    characteristics_bounder: Optional[BoundingConfig] = None
-
     # Sparsity controls for importance [only used if fit_importance is True]
     # Temperature for importance
     rel_temperature: float = 0.5
+    fast: bool = False
 
     @property
     def arch(self):
