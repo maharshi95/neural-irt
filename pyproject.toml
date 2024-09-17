@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "neural-irt"
+version = "0.1.0"
+description = "A PyTorch-based framework to train and evaluate IRT-based neural models."
+readme = "README.md"
+authors = [{ name = "Maharshi Gor", email = "mgor@cs.umd.edu" }]
+license = { text = "GPL-2.0" }
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "License :: OSI Approved :: GNU General Public License v2 (GPLv2)",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+]
+requires-python = ">=3.10"
+
+[project.urls]
+Homepage = "https://github.com/maharshi95/neural-irt"
+"Bug Tracker" = "https://github.com/maharshi95/neural-irt/issues"
+
+[tool.setuptools]
+packages = ["neural_irt"]
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
