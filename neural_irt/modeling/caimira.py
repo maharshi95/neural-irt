@@ -112,7 +112,8 @@ class CaimiraModel(AgentIndexedIrtModel):
         # item_embeddings: (batch_size, n_dim_item_embed)
         # agent_type_ids: Optional[(batch_size,)]
 
-        if self.config.fit_agent_type_embeddings and agent_ids is None:
+        # Ensure agent type ids are provided when agent type embeddings are used
+        if self.config.fit_agent_type_embeddings and agent_type_ids is None:
             raise ValueError(
                 "Agent type inputs must be provided if config.fit_agent_type_embeddings is True"
             )

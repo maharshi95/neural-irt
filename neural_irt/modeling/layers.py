@@ -25,6 +25,7 @@ class Bounder(nn.Module):
 def create_zero_init_embedding(
     n: int, dim: int, dtype: Any = torch.float32, requires_grad: bool = True
 ):
-    embedding = nn.Embedding(n, dim, _weight=torch.zeros((n, dim), dtype=dtype))
+    # Use positional size arguments for torch.zeros to avoid dtype dispatch issues
+    embedding = nn.Embedding(n, dim, _weight=torch.zeros(n, dim, dtype=dtype))
     embedding.weight.requires_grad = requires_grad
     return embedding

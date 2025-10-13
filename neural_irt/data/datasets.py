@@ -5,13 +5,13 @@ import datasets as hf_datasets
 import torch
 from torch.utils.data import Dataset as TorchDataset
 
-from neural_irt.configs.common import DatasetConfig
+from neural_irt.configs.common import DatasetConfig, InputFormat
 
 StringDict = dict[str, Any]
 StateDict = dict[str, torch.Tensor]
 
 
-def process_dataset_name(name: str) -> str:
+def process_dataset_name(name: str) -> tuple[str, Optional[str], Optional[str]]:
     # split the name with :
     # example {dataset_name}:{config_name}:{split_name}
     # it could also be {dataset_name}:{split_name} or {dataset_name}::{split_name}
@@ -23,31 +23,46 @@ def process_dataset_name(name: str) -> str:
     elif len(parts) == 3:
         if parts[1] == "":
             return parts[0], None, parts[2]
-        return parts
+        return parts[0], parts[1], parts[2]
+    else:
+        raise ValueError(
+            f"Invalid dataset name format: {name}. "
+            "Allowed formats are {dataset_name} or {dataset_name}:{config_name} "
+            "or {dataset_name}:{config_name}:{split_name}"
+        )
+
+
+def load_hf_dataset(
+    name_or_path: str,
+    config_name: Optional[str] = None,
+    split_name: Optional[str] = None,
+) -> hf_datasets.Dataset:
+    if os.path.isdir(name_or_path):
+        if config_name is not None:
+            raise ValueError("Cannot specify config name when loading from disk.")
+        return hf_datasets.load_from_disk(name_or_path, split=split_name)
+    else:
+        return hf_datasets.load_dataset(
+            name_or_path, name=config_name, split=split_name
+        )
 
 
 def load_as_hf_dataset(name_or_path: str) -> hf_datasets.Dataset:
+    """Loads a json/jsonl file as a huggingface dataset."""
     if name_or_path.endswith(".json") or name_or_path.endswith(".jsonl"):
         return hf_datasets.load_dataset("json", data_files=name_or_path)["train"]
     name_or_path, config_name, split_name = process_dataset_name(name_or_path)
-    if os.path.isdir(name_or_path):
-        return hf_datasets.load_from_disk(
-            name_or_path, split=split_name, config=config_name
-        )
-    else:
-        return hf_datasets.load_dataset(
-            name_or_path, split=split_name, config=config_name
-        )
+    return load_hf_dataset(name_or_path, config_name, split_name)
 
 
 class IrtDataset(TorchDataset):
-    def __init__(
+    def __init__(  # noqa: C901
         self,
         responses: Sequence[StringDict],
         queries: Sequence[StringDict],
         agents: Sequence[StringDict],
-        query_input_format: str = "id",
-        agent_input_format: str = "id",
+        query_input_format: InputFormat = "id",
+        agent_input_format: InputFormat = "id",
         query_embeddings: Optional[StateDict] = None,
         agent_embeddings: Optional[StateDict] = None,
     ):

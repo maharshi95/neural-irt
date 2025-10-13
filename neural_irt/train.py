@@ -226,10 +226,10 @@ def main(args: argparse.Namespace) -> None:
     checkpoint_callback = ModelCheckpoint(
         save_top_k=3,
         monitor="val/acc",
-        mode="min",
+        mode="max",
         dirpath=ckpt_dir,
         auto_insert_metric_name=False,
-        filename="epoch={epoch}-loss={val/loss:.2f}",
+        filename="epoch={epoch}-acc={val/acc:.2f}",
     )
     checkpoint_callback.FILE_EXTENSION = ""
     trainer = CaimiraTrainer(
@@ -267,7 +267,7 @@ def add_arguments(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        formatter_class=RichHelpFormatter, description="Train IRT model."
+        formatter_class=RichHelpFormatter, description="Train a Neural IRT model."
     )
     parser = add_arguments(parser)
     args = parser.parse_args()

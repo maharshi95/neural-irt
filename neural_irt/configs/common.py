@@ -1,9 +1,11 @@
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from loguru import logger
 from pydantic import BaseModel
 
 from neural_irt.modeling.configs import IrtModelConfig
+
+InputFormat = Literal["id", "text", "embedding"]
 
 
 class DatasetConfig(BaseModel):
@@ -16,8 +18,8 @@ class DataConfig(BaseModel):
     train_set: DatasetConfig
     val_set: Optional[DatasetConfig] = None
     val_sets: dict[str, DatasetConfig] = {}
-    question_input_format: str = "id"
-    agent_input_format: str = "id"
+    question_input_format: InputFormat = "id"
+    agent_input_format: InputFormat = "id"
     agent_indexer_path: Optional[str] = None
     query_indexer_path: Optional[str] = None
     query_embeddings_path: Optional[str] = None
