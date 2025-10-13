@@ -1,23 +1,16 @@
 import dataclasses
-from typing import Optional, Sequence
 import os
+from typing import Optional, Sequence
+
 import torch
 import torch.nn.functional as F
 from torch import Tensor, nn
 
 from neural_irt.modeling.base_models import IrtModelOutput
 from neural_irt.modeling.layers import Bounder, create_zero_init_embedding
-from neural_irt.utils import config_utils
+from neural_irt.utils import config_utils, torch_utils
+
 from .configs import CaimiraConfig
-
-
-def resolve_device(device: Optional[str]) -> torch.device:
-    if device is None:
-        return torch.device("cpu")
-    elif device == "auto":
-        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    else:
-        return torch.device(device)
 
 
 @dataclasses.dataclass
@@ -232,7 +225,7 @@ class CaimiraModel(nn.Module):
 
     @classmethod
     def load_pretrained(cls, path: str, device: str = "auto"):
-        device = resolve_device(device)
+        device = torch_utils.resolve_device(device)
 
         # Load the model config, model weights
         config_path = os.path.join(path, "config.json")

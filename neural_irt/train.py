@@ -3,16 +3,17 @@ import os
 from collections import Counter
 from typing import Any, Optional, Sequence
 
+import wandb
 from loguru import logger
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
+from rich import print as rprint
 from rich.logging import RichHandler
 from rich.traceback import install
 from rich_argparse import RichHelpFormatter
 from torch.utils import data as torch_data
-from rich import print as rprint
-import wandb
+
 from neural_irt.configs.caimira import RunConfig
 from neural_irt.configs.common import DataConfig
 from neural_irt.data import collators, datasets

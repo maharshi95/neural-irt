@@ -11,9 +11,7 @@ from torch import Tensor
 from neural_irt.configs.common import IrtModelConfig, TrainerConfig
 from neural_irt.data.indexers import AgentIndexer
 from neural_irt.modeling.base_models import BaseIrtModel, IrtModelOutput
-
 from neural_irt.modeling.caimira import CaimiraModel, CaimiraModelOutput
-
 from neural_irt.modeling.caimira_fast import CaimiraModel as CaimiraModelFast
 from neural_irt.modeling.configs import CaimiraConfig, MirtConfig
 from neural_irt.utils import config_utils
@@ -174,7 +172,7 @@ class IrtLitModule(pl.LightningModule):
                 f"{tag}/{key}",
                 value,
                 logger=True,
-                add_dataloader_idx=True,
+                add_dataloader_idx=False,
                 prog_bar=prog_bar,
             )
 

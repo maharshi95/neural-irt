@@ -4,12 +4,14 @@ from torch import nn
 
 from neural_irt.data.indexers import AgentIndexer
 from neural_irt.modeling.caimira import CaimiraConfig, CaimiraModel
+from neural_irt.utils import torch_utils
 
 
 class CaimiraInferenceModel(nn.Module):
-    def __init__(self, model: CaimiraModel, agent_indexer: AgentIndexer):
+    def __init__(self, model: CaimiraModel, agent_indexer: AgentIndexer, device="auto"):
         super().__init__()
-        self.model = model
+        self.device = torch_utils.resolve_device(device)
+        self.model = model.to(self.device)
         self.agent_indexer = agent_indexer
         self.eval()
         if torch.cuda.is_available():
@@ -30,6 +32,9 @@ class CaimiraInferenceModel(nn.Module):
 
     def compute_agent_skills(self, agent_names):
         agent_ids, agent_type_ids = self.agent_indexer(agent_names, return_tensors="pt")
+        agent_ids = agent_ids.to(self.device)
+        if agent_type_ids is not None:
+            agent_type_ids = agent_type_ids.to(self.device)
         with torch.no_grad():
             return self.model.compute_agent_skills(agent_ids, agent_type_ids)
 
@@ -43,20 +48,3 @@ class CaimiraInferenceModel(nn.Module):
         model = CaimiraModel.load_pretrained(path, device=device)
         agent_indexer = AgentIndexer.load_from_disk(path)
         return cls(model=model, agent_indexer=agent_indexer)
-
-
-# %%
-checkpoint_path = "checkpoints/irt/sample_run/epoch_10"
-
-
-# %%
-model = CaimiraInferenceModel.load_pretrained(checkpoint_path, device="cpu")
-
-# %%
-skills = model.compute_agent_skills(["a1", "a2", "a3", "a4", "a5", "a6", "a7"])
-type_skills = model.compute_agent_type_skills(
-    ["a1", "a2", "a3", "a4", "a5", "a6", "a7"]
-)
-# %%
-model.model.agent_embeddings(2)
-# %%
