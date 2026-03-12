@@ -147,9 +147,7 @@ class IrtDataset(TorchDataset):
             entry["agent_id"] = agent_id
         elif self.agent_input_format == "embedding":
             entry["agent_rep"] = self.agents[agent_id]["embedding"]
-            entry["agent_rep"] = self.agents[agent_id]["embedding"]
         elif self.agent_input_format == "text":
-            entry["agent_text"] = self.agents[agent_id]["text"]
             entry["agent_text"] = self.agents[agent_id]["text"]
         else:
             raise ValueError(f"Unknown agent input format: {self.agent_input_format}")

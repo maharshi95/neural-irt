@@ -23,19 +23,19 @@ def query_indexer():
 def neural_mirt_entries():
     return [
         {
-            "agent_name": "agent1",
+            "agent_id": "agent1",
             "query_id": "query1",
             "ruling": 1,
             "extra_key": "value1",
         },
         {
-            "agent_name": "agent2",
+            "agent_id": "agent2",
             "query_id": "query2",
             "ruling": 0,
             "extra_key": "value2",
         },
         {
-            "agent_name": "agent3",
+            "agent_id": "agent3",
             "query_id": "query3",
             "ruling": 1,
             "extra_key": "value3",
@@ -129,7 +129,7 @@ def test_neural_mirt_collator_non_training_mode(
     batch = collator(neural_mirt_entries)
 
     for key in neural_mirt_entries[0].keys():
-        if key not in ["agent_name", "query_id", "ruling"]:
+        if key not in ["agent_id", "query_id", "ruling"]:
             assert key in batch
             assert isinstance(batch[key], list)
             assert len(batch[key]) == len(neural_mirt_entries)
