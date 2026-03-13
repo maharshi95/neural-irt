@@ -48,10 +48,10 @@ class MirtModel(AgentIndexedIrtModel):
         return characteristics
 
     def _compute_logits(
-        self, agent_skills: Tensor, item_characteristics: dict[str, Tensor]
+        self, agent_skills: Tensor, item_chars: dict[str, Tensor]
     ) -> Tensor:
-        disc = item_characteristics["discriminability"]
-        diff = item_characteristics["difficulty"]
+        disc = item_chars["discriminability"]
+        diff = item_chars["difficulty"]
 
         logits = torch.einsum("bn,bn->b", disc, agent_skills) + diff[:, 0]
 

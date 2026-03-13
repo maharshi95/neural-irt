@@ -108,7 +108,7 @@ class BaseIrtModel(PretrainedModel):
         )
 
     def _compute_logits(
-        self, agent_skills: Tensor, item_characteristics: dict[str, Tensor]
+        self, agent_skills: Tensor, item_chars: dict[str, Tensor]
     ) -> Tensor:
         raise NotImplementedError("BaseIrtModel._compute_logits must be implemented")
 

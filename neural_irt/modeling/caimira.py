@@ -94,10 +94,10 @@ class CaimiraModel(AgentIndexedIrtModel):
         return characteristics
 
     def _compute_logits(
-        self, agent_skills: Tensor, item_characteristics: dict[str, Tensor]
+        self, agent_skills: Tensor, item_chars: dict[str, Tensor]
     ) -> Tensor:
-        latent_scores = agent_skills - item_characteristics["difficulty"]
-        logits = torch.einsum("bn,bn->b", latent_scores, item_characteristics["relevance"])
+        latent_scores = agent_skills - item_chars["difficulty"]
+        logits = torch.einsum("bn,bn->b", latent_scores, item_chars["relevance"])
 
         if self.config.fit_guess_bias:
             logits += self.guess_bias
