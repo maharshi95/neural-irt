@@ -110,6 +110,9 @@ class CaimiraModel(AgentIndexedIrtModel):
         agent_type_ids: Optional[Tensor] = None,
     ) -> CaimiraModelOutput:
         """Compute logits for each agent-item pair."""
+        # agent_ids: (batch_size,)
+        # item_embeddings: (batch_size, n_dim_item_embed)
+        # agent_type_ids: Optional[(batch_size,)]
         return super().forward(agent_ids, item_embeddings, agent_type_ids)
 
 

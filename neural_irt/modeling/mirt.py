@@ -67,7 +67,7 @@ class MirtModel(AgentIndexedIrtModel):
     ) -> MirtModelOutput:
         """Compute logits for each agent-item pair."""
         # agent_ids: (batch_size,)
-        # item_embeddings: (batch_size, n_dim_item_embed)
+        # item_ids: (batch_size,)
         # agent_type_ids: Optional[(batch_size,)]
 
         return super().forward(agent_ids, item_ids, agent_type_ids)
