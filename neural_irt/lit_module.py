@@ -11,21 +11,31 @@ from torch import Tensor
 from neural_irt.configs.common import IrtModelConfig, TrainerConfig
 from neural_irt.data.indexers import AgentIndexer
 from neural_irt.modeling.base_models import BaseIrtModel, IrtModelOutput
-
-from neural_irt.modeling.caimira import CaimiraModel, CaimiraModelOutput
-
-from neural_irt.modeling.caimira_fast import CaimiraModel as CaimiraModelFast
+from neural_irt.modeling.caimira import CaimiraModel
 from neural_irt.modeling.configs import CaimiraConfig, MirtConfig
+from neural_irt.modeling.mirt import MirtModel
 from neural_irt.utils import config_utils
 
 
 def create_model(config: IrtModelConfig) -> BaseIrtModel:
     if isinstance(config, CaimiraConfig):
-        return CaimiraModelFast(config) if config.fast else CaimiraModel(config)
+        return CaimiraModel(config)
     elif isinstance(config, MirtConfig):
-        raise NotImplementedError("MIRT model not implemented yet.")
+        return MirtModel(config)
     else:
         raise ValueError(f"Unknown model config: {config}")
+
+
+def load_model_pretrained(path: str, device: str = "auto") -> BaseIrtModel:
+    """Load a pretrained model by inferring the model type from the saved config."""
+    config_path = os.path.join(path, "config.json")
+    raw_config = config_utils.load_config(config_path)
+    if "n_dim_item_embed" in raw_config:
+        return CaimiraModel.load_pretrained(path, device=device)
+    elif "n_items" in raw_config:
+        return MirtModel.load_pretrained(path, device=device)
+    else:
+        raise ValueError(f"Cannot determine model type from config at {path}")
 
 
 class IrtLitModule(pl.LightningModule):
@@ -53,19 +63,25 @@ class IrtLitModule(pl.LightningModule):
 
         self.save_hyperparameters(argparse.Namespace(**trainer_config.model_dump()))
 
+        self._val_relevances: list[Tensor] = []
+
     def forward(self, *args, **kwargs) -> IrtModelOutput:
         return self.model.forward(*args, **kwargs)
 
     def compute_loss(
-        self, outputs: CaimiraModelOutput, labels: Tensor
+        self, outputs: IrtModelOutput, labels: Tensor
     ) -> dict[str, Tensor]:
-        # batch: (subjects, items, labels)
-        # return: dict
-
         loss_ce = F.binary_cross_entropy_with_logits(outputs.logits, labels)
-        loss_reg_skill = self.hparams.c_reg_skill * outputs.skill.abs().sum()
-        loss_reg_diff = self.hparams.c_reg_difficulty * outputs.difficulty.abs().sum()
-        loss_reg = loss_reg_skill + loss_reg_diff
+
+        loss_reg = torch.tensor(0.0, device=labels.device)
+        c_reg_skill = getattr(self.hparams, "c_reg_skill", 0.0)
+        c_reg_difficulty = getattr(self.hparams, "c_reg_difficulty", 0.0)
+
+        if c_reg_skill:
+            loss_reg = loss_reg + c_reg_skill * outputs.skill.abs().sum()
+        if c_reg_difficulty:
+            loss_reg = loss_reg + c_reg_difficulty * outputs.difficulty.abs().sum()
+
         loss = loss_ce + loss_reg
         return {
             "loss": loss,
@@ -148,9 +164,10 @@ class IrtLitModule(pl.LightningModule):
         else:
             return [optimizer]
 
+    def on_validation_epoch_start(self) -> None:
+        self._val_relevances = []
+
     def validation_step(self, batch, batch_idx, dataloader_idx: int = 0):
-        # batch: (subjects, items, labels)
-        # return: dict
         labels = batch.pop("labels")
         outputs = self.forward(**batch)
         metrics = self.compute_loss(outputs, labels)
@@ -178,43 +195,60 @@ class IrtLitModule(pl.LightningModule):
                 prog_bar=prog_bar,
             )
 
-    def compute_qualitative_metrics(self):
+        if hasattr(outputs, "relevance"):
+            self._val_relevances.append(outputs.relevance.detach().cpu())
+
+    def compute_qualitative_metrics(self, rel: Tensor) -> dict[str, float]:
+        """Compute qualitative metrics from relevance weights.
+
+        Analyzes the distribution of relevance weights across latent dimensions:
+        - Per-dimension standard deviation of relevance weights
+        - Cluster assignments based on dominant relevance (threshold > 0.5)
+
+        Args:
+            rel: Relevance tensor of shape (n_samples, n_dim), where each row
+                 is a probability distribution over latent dimensions.
+
+        Returns:
+            Dictionary mapping metric names to float values.
+        """
         metrics = {}
 
-        # [n_items, n_dim]
-        rel = self.model.get_relevance()
-
+        # Per-dimension standard deviation of relevance across items
         rel_std = rel.std(0)
-
         for i in range(rel.shape[1]):
             metrics[f"rel_std_{i}"] = rel_std[i].item()
 
-        # Create clusters such that if rel[i, j] > 0.5, then i is assigned to cluster (j+1), else to cluster (N+1)
+        # Cluster items by dominant relevance dimension.
+        # If rel[i, j] > 0.5, item i is assigned to cluster (j+1).
+        # Items with no dominant dimension go to cluster (n_dim+1).
+        n_dim = rel.shape[1]
         rel_clusters = (
             torch.where(
-                (rel > 0.5).cpu(),
-                torch.arange(1, rel.shape[1] + 1),
-                rel.shape[1] + 1,
+                rel > 0.5,
+                torch.arange(1, n_dim + 1),
+                n_dim + 1,
             )
             .min(dim=-1)
             .values
         )
 
-        for i in range(rel.shape[1] + 1):
-            metrics[f"cluster_size_rel_{i+1}"] = float(
+        for i in range(n_dim + 1):
+            metrics[f"cluster_size_rel_{i + 1}"] = float(
                 (rel_clusters == i + 1).sum().item()
             )
 
         return metrics
 
-    # def on_validation_epoch_end(self):
-    # compute_metrics = self.compute_qualitative_metrics()
-    # for name, value in compute_metrics.items():
-    #     self.log(name, value, logger=True, add_dataloader_idx=False)
+    def on_validation_epoch_end(self) -> None:
+        if self._val_relevances:
+            all_rel = torch.cat(self._val_relevances, dim=0)
+            qual_metrics = self.compute_qualitative_metrics(all_rel)
+            for name, value in qual_metrics.items():
+                self.log(name, value, logger=True, add_dataloader_idx=False)
+        self._val_relevances = []
 
     def predict_step(self, batch, batch_idx):
-        # batch: (subjects, items)
-        # return: dict
         logits = self.forward(**batch)
         return logits
 
@@ -232,12 +266,18 @@ class IrtLitModule(pl.LightningModule):
 
     @classmethod
     def load_from_checkpoint(cls, checkpoint_path, map_location=None):
-        # load model
-        model = CaimiraModel.load_pretrained(checkpoint_path, device=map_location)
-        trainer_config = config_utils.load_config(
-            os.path.join(checkpoint_path, "trainer.json"),
-            cls=TrainerConfig,
-        )
+        model = load_model_pretrained(checkpoint_path, device=map_location)
+
+        # Use appropriate trainer config class based on model type
+        from neural_irt.configs.caimira import TrainerConfig as CaimiraTrainerConfig
+
+        trainer_config_path = os.path.join(checkpoint_path, "trainer.json")
+        trainer_config_dict = config_utils.load_config(trainer_config_path)
+        if isinstance(model.config, CaimiraConfig):
+            trainer_config = CaimiraTrainerConfig(**trainer_config_dict)
+        else:
+            trainer_config = TrainerConfig(**trainer_config_dict)
+
         agent_indexer = None
         if AgentIndexer.exists_on_disk(checkpoint_path):
             agent_indexer = AgentIndexer.load_from_disk(checkpoint_path)

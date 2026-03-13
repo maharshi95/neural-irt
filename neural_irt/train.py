@@ -133,6 +133,7 @@ def make_dataloaders(
         data_config.question_input_format,
         data_config.agent_input_format,
         data_config.query_embeddings_path,
+        data_config.agent_embeddings_path,
     )
 
     # if data_config.trainer.sampler == "weighted":
@@ -167,6 +168,7 @@ def make_dataloaders(
             data_config.question_input_format,
             data_config.agent_input_format,
             data_config.query_embeddings_path,
+            data_config.agent_embeddings_path,
         )
         val_loaders[name] = torch_data.DataLoader(
             val_ds,

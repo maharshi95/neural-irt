@@ -69,7 +69,6 @@ class CaimiraConfig(IrtModelConfig):
     # Sparsity controls for importance [only used if fit_importance is True]
     # Temperature for importance
     rel_temperature: float = 0.5
-    fast: bool = False
 
     @property
     def arch(self):

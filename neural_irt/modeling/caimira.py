@@ -1,5 +1,5 @@
 import dataclasses
-from typing import Optional, Sequence
+from typing import Optional
 
 import torch
 import torch.nn.functional as F
@@ -82,10 +82,10 @@ class CaimiraModel(AgentIndexedIrtModel):
         return rel_norm
 
     def compute_item_characteristics(
-        self, item_embeddings: Sequence[Tensor]
+        self, item_inputs: Tensor
     ) -> dict[str, Tensor]:
-        item_relevance = self.compute_item_relevance(item_embeddings)
-        item_difficulty = self.compute_item_difficulty(item_embeddings)
+        item_relevance = self.compute_item_relevance(item_inputs)
+        item_difficulty = self.compute_item_difficulty(item_inputs)
         characteristics = {
             "difficulty": item_difficulty,
             "relevance": item_relevance,
@@ -93,7 +93,9 @@ class CaimiraModel(AgentIndexedIrtModel):
 
         return characteristics
 
-    def _compute_logits(self, agent_skills, item_chars):
+    def _compute_logits(
+        self, agent_skills: Tensor, item_chars: dict[str, Tensor]
+    ) -> Tensor:
         latent_scores = agent_skills - item_chars["difficulty"]
         logits = torch.einsum("bn,bn->b", latent_scores, item_chars["relevance"])
 
@@ -111,21 +113,7 @@ class CaimiraModel(AgentIndexedIrtModel):
         # agent_ids: (batch_size,)
         # item_embeddings: (batch_size, n_dim_item_embed)
         # agent_type_ids: Optional[(batch_size,)]
-
-        if self.config.fit_agent_type_embeddings and agent_ids is None:
-            raise ValueError(
-                "Agent type inputs must be provided if config.fit_agent_type_embeddings is True"
-            )
-
-        item_chars = self.compute_item_characteristics(item_embeddings)
-        agent_skills = self.compute_agent_skills(agent_ids, agent_type_ids)
-
-        logits = self._compute_logits(agent_skills, item_chars)
-        return self.output_class(
-            logits=logits,
-            skill=agent_skills,
-            **item_chars,
-        )
+        return super().forward(agent_ids, item_embeddings, agent_type_ids)
 
 
 if __name__ == "__main__":

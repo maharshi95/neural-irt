@@ -17,7 +17,7 @@ class NeuralMirtCollator:
         self.is_training = is_training
 
     def __call__(self, entries: List[Dict[str, Any]]) -> Dict[str, torch.Tensor]:
-        agent_names = [entry["agent_name"] for entry in entries]
+        agent_names = [entry["agent_id"] for entry in entries]
         query_ids = [entry["query_id"] for entry in entries]
         rulings = [entry["ruling"] for entry in entries]
 
@@ -33,7 +33,7 @@ class NeuralMirtCollator:
 
         if not self.is_training:
             for key in entries[0].keys():
-                if key not in ["agent_name", "agent_type", "query_id", "ruling"]:
+                if key not in ["agent_id", "query_id", "ruling"]:
                     batch[key] = [entry[key] for entry in entries]
 
         return batch

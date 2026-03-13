@@ -1,10 +1,9 @@
 # %%
 
 import dataclasses
-from typing import Optional, Sequence
+from typing import Optional
 
 import torch
-from loguru import logger
 from torch import Tensor, nn
 
 from neural_irt.modeling.base_models import AgentIndexedIrtModel, IrtModelOutput
@@ -48,7 +47,9 @@ class MirtModel(AgentIndexedIrtModel):
         }
         return characteristics
 
-    def _compute_logits(self, agent_skills, item_chars):
+    def _compute_logits(
+        self, agent_skills: Tensor, item_chars: dict[str, Tensor]
+    ) -> Tensor:
         disc = item_chars["discriminability"]
         diff = item_chars["difficulty"]
 
@@ -66,7 +67,7 @@ class MirtModel(AgentIndexedIrtModel):
     ) -> MirtModelOutput:
         """Compute logits for each agent-item pair."""
         # agent_ids: (batch_size,)
-        # item_embeddings: (batch_size, n_dim_item_embed)
+        # item_ids: (batch_size,)
         # agent_type_ids: Optional[(batch_size,)]
 
         return super().forward(agent_ids, item_ids, agent_type_ids)
