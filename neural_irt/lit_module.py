@@ -12,13 +12,16 @@ from neural_irt.configs.common import IrtModelConfig, TrainerConfig
 from neural_irt.data.indexers import AgentIndexer
 from neural_irt.modeling.base_models import BaseIrtModel, IrtModelOutput
 from neural_irt.modeling.caimira import CaimiraModel
-from neural_irt.modeling.configs import CaimiraConfig, MirtConfig
+from neural_irt.modeling.configs import CaimiraConfig, HpcirtConfig, MirtConfig
+from neural_irt.modeling.hpcirt import HpcirtModel
 from neural_irt.modeling.mirt import MirtModel
 from neural_irt.utils import config_utils
 
 
 def create_model(config: IrtModelConfig) -> BaseIrtModel:
-    if isinstance(config, CaimiraConfig):
+    if isinstance(config, HpcirtConfig):
+        return HpcirtModel(config)
+    elif isinstance(config, CaimiraConfig):
         return CaimiraModel(config)
     elif isinstance(config, MirtConfig):
         return MirtModel(config)
@@ -30,7 +33,9 @@ def load_model_pretrained(path: str, device: str = "auto") -> BaseIrtModel:
     """Load a pretrained model by inferring the model type from the saved config."""
     config_path = os.path.join(path, "config.json")
     raw_config = config_utils.load_config(config_path)
-    if "n_dim_item_embed" in raw_config:
+    if "mu_prior_logit" in raw_config or "bifactor_reg" in raw_config:
+        return HpcirtModel.load_pretrained(path, device=device)
+    elif "n_dim_item_embed" in raw_config:
         return CaimiraModel.load_pretrained(path, device=device)
     elif "n_items" in raw_config:
         return MirtModel.load_pretrained(path, device=device)
@@ -69,7 +74,7 @@ class IrtLitModule(pl.LightningModule):
         return self.model.forward(*args, **kwargs)
 
     def compute_loss(
-        self, outputs: IrtModelOutput, labels: Tensor
+        self, outputs: IrtModelOutput, labels: Tensor, batch: dict | None = None
     ) -> dict[str, Tensor]:
         loss_ce = F.binary_cross_entropy_with_logits(outputs.logits, labels)
 
@@ -81,6 +86,30 @@ class IrtLitModule(pl.LightningModule):
             loss_reg = loss_reg + c_reg_skill * outputs.skill.abs().sum()
         if c_reg_difficulty:
             loss_reg = loss_reg + c_reg_difficulty * outputs.difficulty.abs().sum()
+
+        # HPCIRT-specific regularization
+        if hasattr(outputs, "mu"):
+            c_reg_g = getattr(self.hparams, "c_reg_g", 0.0)
+            c_reg_mu = getattr(self.hparams, "c_reg_mu", 0.0)
+            c_reg_disc = getattr(self.hparams, "c_reg_disc", 0.0)
+            c_reg_bifactor = getattr(self.hparams, "c_reg_bifactor", 0.0)
+
+            if c_reg_g:
+                loss_reg = loss_reg + c_reg_g * outputs.g.pow(2).sum()
+            if c_reg_mu:
+                # Bimodal penalty: encourage μ toward 0 or 1
+                # Penalty = μ(1-μ), maximized at 0.5, zero at 0 and 1
+                loss_reg = loss_reg + c_reg_mu * (outputs.mu * (1 - outputs.mu)).sum()
+            if c_reg_disc:
+                loss_reg = loss_reg + c_reg_disc * outputs.disc.abs().sum()
+                loss_reg = loss_reg + c_reg_disc * outputs.disc_g.abs().sum()
+            if c_reg_bifactor and batch is not None:
+                from neural_irt.modeling.hpcirt import HpcirtModel
+
+                if isinstance(self.model, HpcirtModel) and self.model.config.bifactor_reg:
+                    loss_reg = loss_reg + c_reg_bifactor * self.model.compute_bifactor_reg_loss(
+                        batch["agent_ids"]
+                    )
 
         loss = loss_ce + loss_reg
         return {
@@ -116,7 +145,7 @@ class IrtLitModule(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         labels = batch.pop("labels")
         outputs = self.forward(**batch)
-        train_metrics = self.compute_loss(outputs, labels)
+        train_metrics = self.compute_loss(outputs, labels, batch=batch)
         with torch.no_grad():
             preds = (outputs.logits > 0).float()
             acc = (preds == labels).float().mean()
@@ -170,7 +199,7 @@ class IrtLitModule(pl.LightningModule):
     def validation_step(self, batch, batch_idx, dataloader_idx: int = 0):
         labels = batch.pop("labels")
         outputs = self.forward(**batch)
-        metrics = self.compute_loss(outputs, labels)
+        metrics = self.compute_loss(outputs, labels, batch=batch)
 
         preds = (outputs.logits > 0).float()
         metrics["acc"] = (preds == labels).float().mean()
@@ -270,10 +299,13 @@ class IrtLitModule(pl.LightningModule):
 
         # Use appropriate trainer config class based on model type
         from neural_irt.configs.caimira import TrainerConfig as CaimiraTrainerConfig
+        from neural_irt.configs.hpcirt import TrainerConfig as HpcirtTrainerConfig
 
         trainer_config_path = os.path.join(checkpoint_path, "trainer.json")
         trainer_config_dict = config_utils.load_config(trainer_config_path)
-        if isinstance(model.config, CaimiraConfig):
+        if isinstance(model.config, HpcirtConfig):
+            trainer_config = HpcirtTrainerConfig(**trainer_config_dict)
+        elif isinstance(model.config, CaimiraConfig):
             trainer_config = CaimiraTrainerConfig(**trainer_config_dict)
         else:
             trainer_config = TrainerConfig(**trainer_config_dict)

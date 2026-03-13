@@ -1,0 +1,57 @@
+run_tag: "hpcirt-test"
+
+data:
+  train_set:
+    queries: "resources/tests/data/tiny-test-queries.jsonl"
+    agents: "resources/tests/data/tiny-test-agents.jsonl"
+    responses: "resources/tests/data/tiny-test-responses.jsonl"
+  val_set: null
+  val_sets:
+    val:
+      responses: "resources/tests/data/tiny-test-responses.jsonl"
+  question_input_format: "embedding"
+  agent_input_format: "id"
+  agent_indexer_path: null
+  query_indexer_path: null
+  query_embeddings_path: "resources/tests/data/tiny-test-query-embeds.pt"
+
+model:
+  n_agents: 7
+  n_agent_types: 4
+  n_dim: 5
+  n_dim_item_embed: 3
+  disc_mode: "linear"
+  diff_mode: "linear"
+  conj_diff_mode: "linear"
+  comp_mode: "linear"
+  n_hidden: 64
+  relevance_mode: "derived"
+  mu_prior_logit: -2.0
+  bifactor_reg: true
+  fit_guess_bias: false
+  fit_agent_type_embeddings: false
+  characteristics_bounder: null
+
+trainer:
+  c_reg_skill: 1e-6
+  c_reg_difficulty: 1e-6
+  c_reg_g: 1e-6
+  c_reg_mu: 1e-4
+  c_reg_disc: 1e-6
+  c_reg_bifactor: 1e-4
+  batch_size: 8
+  max_epochs: 10
+  max_steps: null
+  sampler: null
+  optimizer: "Adam"
+  learning_rate: 1e-3
+  cyclic_lr: false
+  second_optimizer: "SGD"
+  second_learning_rate: 5e-4
+  second_optimizer_start_epoch: 7
+  freeze_bias_after: null
+
+wandb:
+  project: "neurt-testing"
+  save_dir: "."
+  entity: null

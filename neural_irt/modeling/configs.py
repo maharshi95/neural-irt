@@ -73,3 +73,41 @@ class CaimiraConfig(IrtModelConfig):
     @property
     def arch(self):
         return "caimira"
+
+
+class HpcirtConfig(IrtModelConfig):
+    """Config for Hierarchical Partially Compensatory IRT (HPCIRT) model.
+
+    This model extends MIRT with:
+    - Bifactor agent structure: general factor g + domain factors θ
+    - Per-item compensation parameter μ interpolating between compensatory and conjunctive
+    - Neural parameterization of item characteristics from embeddings
+    """
+
+    # Item embedding dimension (from external encoder, e.g. sentence-transformers)
+    n_dim_item_embed: int
+
+    # Neural head modes for item parameter computation [linear, mlp]
+    disc_mode: str = "linear"
+    diff_mode: str = "linear"
+    conj_diff_mode: str = "linear"
+    comp_mode: str = "linear"
+
+    # Hidden units for MLP heads (shared across all MLP heads)
+    n_hidden: int = 128
+
+    # Relevance weight mode for conjunctive component
+    # "derived": r_ik = |α_ik| / max_k |α_ik| (Option A, fewer params)
+    # "learned": separate neural head (Option B, more flexible)
+    relevance_mode: str = "derived"
+
+    # Prior logit for compensation parameter ω_i
+    # Negative values bias μ_i = σ(ω_i) toward 0 (compensatory)
+    mu_prior_logit: float = -2.0
+
+    # Whether to apply bifactor hierarchy regularization: ||θ - Λg||²
+    bifactor_reg: bool = True
+
+    @property
+    def arch(self):
+        return "hpcirt"
