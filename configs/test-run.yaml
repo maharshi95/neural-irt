@@ -20,7 +20,7 @@ model:
   n_agents: 7
   n_agent_types: 4
   n_dim: 10
-  n_dim_item_embed: 3
+  n_dim_item_embed: 23
   rel_mode: "linear"
   dif_mode: "linear"
   fit_guess_bias: False
@@ -46,6 +46,7 @@ trainer:
 
 
 wandb:
+  enabled: false
   project: "neurt-testing"
   save_dir: "."
   entity: null

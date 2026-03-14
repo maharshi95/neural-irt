@@ -14,14 +14,20 @@ from rich_argparse import RichHelpFormatter
 from torch.utils import data as torch_data
 
 import wandb
-from neural_irt.configs.caimira import RunConfig
-from neural_irt.configs.common import DataConfig
+from neural_irt.configs import caimira as caimira_configs
+from neural_irt.configs import hpcirt as hpcirt_configs
+from neural_irt.configs.common import DataConfig, RunConfig
 from neural_irt.data import collators, datasets
 from neural_irt.data.indexers import AgentIndexer
 from neural_irt.lit_module import IrtLitModule
 from neural_irt.utils import config_utils, parser_utils
 
 install(show_locals=False, width=120, extra_lines=2)
+
+MODEL_TYPE_REGISTRY: dict[str, type] = {
+    "caimira": caimira_configs.RunConfig,
+    "hpcirt": hpcirt_configs.RunConfig,
+}
 
 
 logger.configure(
@@ -66,19 +72,36 @@ def make_run_name(config: RunConfig) -> str:
             trainer_tags.append(f"_freeze-after-{cfg.freeze_bias_after}")
 
         trainer_tags.append(f"_{cfg.optimizer}-lr={cfg.learning_rate:.0e}")
-        trainer_tags.append(
-            "c-reg"
-            + f"-skill={cfg.c_reg_skill:.0e}".replace("e-0", "e-")
-            + f"-diff={cfg.c_reg_difficulty:.0e}".replace("e-0", "e-")
-            + f"-imp={cfg.c_reg_relevance:.0e}".replace("e-0", "e-")
-        )
+
+        # Build regularization tag from all c_reg_* fields present on the trainer
+        reg_parts = []
+        reg_short_names = {
+            "skill": "skill",
+            "difficulty": "diff",
+            "relevance": "imp",
+            "g": "g",
+            "mu": "mu",
+            "disc": "disc",
+            "bifactor": "bifac",
+        }
+        for reg_name, short in reg_short_names.items():
+            val = getattr(cfg, f"c_reg_{reg_name}", None)
+            if val is not None:
+                reg_parts.append(
+                    f"-{short}={val:.0e}".replace("e-0", "e-")
+                )
+        trainer_tags.append("c-reg" + "".join(reg_parts))
 
         if cfg.sampler is not None:
             trainer_tags.append(f"_sampler={cfg.sampler}")
         return "".join(trainer_tags)
 
     model_arch_tag = f"{model_config.arch}-{model_config.n_dim}-dim"
-    emb_tag = get_embedding_tag(config.data.query_embeddings_path)
+    emb_tag = (
+        get_embedding_tag(config.data.query_embeddings_path)
+        if config.data.query_embeddings_path
+        else ""
+    )
     params_tag = get_params_tag()
     trainer_tag = get_trainer_tag()
 
@@ -93,8 +116,8 @@ def create_agent_indexer_from_dataset(
         dataset = datasets.load_as_hf_dataset(dataset_or_path)
 
     agent_ids = [entry["id"] for entry in dataset]
-    agent_types = list({entry["type"] for entry in dataset})
-    agent_type_map = {entry["id"]: entry["type"] for entry in dataset}
+    agent_types = list({entry["agent_type"] for entry in dataset})
+    agent_type_map = {entry["id"]: entry["agent_type"] for entry in dataset}
     return AgentIndexer(agent_ids, agent_types, agent_type_map)
 
 
@@ -184,7 +207,7 @@ def make_dataloaders(
     return train_loader, val_loaders
 
 
-class CaimiraTrainer(Trainer):
+class IrtTrainer(Trainer):
     def save_checkpoint(self, filepath, weights_only=False):
         checkpoint_dir = filepath.rstrip(".ckpt")
         logger.info(f"Saving checkpoint to {checkpoint_dir}")
@@ -192,8 +215,8 @@ class CaimiraTrainer(Trainer):
         self.model.save_checkpoint(checkpoint_dir, weights_only=weights_only)
 
 
-def main(args: argparse.Namespace) -> None:
-    config: RunConfig = config_utils.load_config_from_namespace(args, RunConfig)
+def main(args: argparse.Namespace, run_config_cls: type = RunConfig) -> None:
+    config: RunConfig = config_utils.load_config_from_namespace(args, run_config_cls)
     logger.info(f"Loaded config:\n{config}")
     agent_indexer = create_agent_indexer(config)
 
@@ -214,8 +237,8 @@ def main(args: argparse.Namespace) -> None:
     logger.info(f"Model loaded with the following config:\n{config.model}")
 
     train_logger = None
-    save_dir = os.path.abspath(config.wandb.save_dir)
     if config.wandb and config.wandb.enabled:
+        save_dir = os.path.abspath(config.wandb.save_dir)
         train_logger = WandbLogger(
             project=config.wandb.project,
             name=run_name,
@@ -234,7 +257,7 @@ def main(args: argparse.Namespace) -> None:
         filename="epoch={epoch}-acc={val/acc:.2f}",
     )
     checkpoint_callback.FILE_EXTENSION = ""
-    trainer = CaimiraTrainer(
+    trainer = IrtTrainer(
         max_epochs=config.trainer.max_epochs,
         accelerator="auto",
         logger=train_logger,
@@ -255,23 +278,42 @@ def main(args: argparse.Namespace) -> None:
         checkpoint_callback.best_model_path
     )
     print(loaded_model)
-    print("Run dir:", wandb.run.dir)
-    wandb.save()
+    if wandb.run is not None:
+        print("Run dir:", wandb.run.dir)
+        wandb.save()
 
 
 def add_arguments(
     parser: Optional[argparse.ArgumentParser] = None,
+    run_config_cls: type = RunConfig,
 ) -> argparse.ArgumentParser:
     parser = parser or argparse.ArgumentParser()
 
-    return parser_utils.populate_parser_with_config_args(parser, RunConfig)
+    return parser_utils.populate_parser_with_config_args(parser, run_config_cls)
 
 
 if __name__ == "__main__":
+    # Two-phase parse: first get model type, then populate full parser
+    pre_parser = argparse.ArgumentParser(add_help=False)
+    pre_parser.add_argument(
+        "--model-type",
+        type=str,
+        required=True,
+        choices=list(MODEL_TYPE_REGISTRY),
+    )
+    pre_args, _ = pre_parser.parse_known_args()
+    run_config_cls = MODEL_TYPE_REGISTRY[pre_args.model_type]
+
     parser = argparse.ArgumentParser(
         formatter_class=RichHelpFormatter, description="Train IRT model."
     )
-    parser = add_arguments(parser)
+    parser.add_argument(
+        "--model-type",
+        type=str,
+        required=True,
+        choices=list(MODEL_TYPE_REGISTRY),
+    )
+    parser = add_arguments(parser, run_config_cls)
     args = parser.parse_args()
     rprint({k: v for k, v in vars(args).items() if v is not None})
-    main(args)
+    main(args, run_config_cls)
