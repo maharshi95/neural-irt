@@ -248,13 +248,21 @@ def main(args: argparse.Namespace, run_config_cls: type = RunConfig) -> None:
 
     ckpt_dir = f"{config.trainer.ckpt_savedir}/{run_name}"
 
+    # With multiple val dataloaders, PL appends /dataloader_idx_N to metric names.
+    # Monitor the first val loader's accuracy.
+    first_val_name = val_loader_names[0] if val_loader_names else "val"
+    if len(val_loaders) > 1:
+        monitor_key = f"{first_val_name}/acc/dataloader_idx_0"
+    else:
+        monitor_key = f"{first_val_name}/acc"
+
     checkpoint_callback = ModelCheckpoint(
         save_top_k=3,
-        monitor="val/acc",
-        mode="max",  # Error: This should be "max" instead of "min" for accuracy
+        monitor=monitor_key,
+        mode="max",
         dirpath=ckpt_dir,
         auto_insert_metric_name=False,
-        filename="epoch={epoch}-acc={val/acc:.2f}",
+        filename="epoch={epoch}-acc={" + monitor_key + ":.2f}",
     )
     checkpoint_callback.FILE_EXTENSION = ""
     trainer = IrtTrainer(
